@@ -1,0 +1,48 @@
+\begin{definition}[Directional derivative] 
+    Let $f: \Omega \subset \mathbb{R}^n \mapsto \mathbb{R}, \; \Vec{v} \in \mathbb{R}^n \setminus \{0\}$ and $a \in \Omega$. If limit
+    
+    $$
+     \lim_{x\to 0} \frac{f(a+t\Vec{v})-f(a)}{t} =: D_{\Vec{v}} f(a)
+    $$
+    
+    exists, we call it a directional derivative in the direction of $\Vec{v}$ at $a$
+\end{definition}
+
+
+\begin{theorem}
+    Let $f: \Omega \subset \mathbb{R}^n \mapsto \mathbb{R}$ be a differentiable at $a \in \Omega$. Then for all directions $\Vec{v} \in \mathbb{R}^n \setminus \{0\}$ exists a directional derivative and the following statement applies
+
+    $$
+    D_{\Vec{v}} f(a) = \nabla f(a)\Vec{v}
+    $$
+\end{theorem}
+
+\begin{theorem}
+    Let $f: \Omega \subset \mathbb{R}^n \mapsto \mathbb{R}$, $ f \in C^2(\Omega)$ and $\nabla f(a) = \frac{\partial f}{\partial \Vec{x}}(a) = \Vec{0}^T$, then if $\nabla^2 f(a)$ is positive definite, where $(\nabla^2 f(a))_{i,j} = \frac{\partial^2 f}{\partial x_i \partial x_j}$, $i, j \in [n]$, then $f$ has a local minimum at $a$.
+\end{theorem}
+
+\par This process is computationally inappropriate for various reasons. 
+\textbf{TODO: why is it inappropriate}
+Since gradient $\nabla f(a)$ is vector at $a$ pointing to the steepest ascent, the negative of gradient points in the steepest descent. Generally gradient descen method is defined as follows:
+\begin{equation}
+    \label{gradient descent}
+    \Vec{x'} = \Vec{x} - \epsilon \nabla f(\Vec{x})
+\end{equation}
+Where $\epsilon$ is the learning rate.
+
+___________________________________________________________
+
+
+GRAFÍÍÍÍK
+
+\begin{equation}
+    f(x,y) = xy \quad \implies \quad \frac{\partial f(x,y)}{\partial x} = y, \quad \frac{\partial f(x,y)}{\partial y} = x
+\end{equation}
+
+GRAFÍÍÍK
+\begin{equation}
+    f(x,y) = x+y \quad \implies \quad \frac{\partial f(x,y)}{\partial x} = 1, \quad \frac{\partial f(x,y)}{\partial y} = 1
+\end{equation}
+
+For activation functions see \ref{sec:Activation functions}. 
+\par The whole network can be described as computational graph consisting only with these operations but with vectors, which ease things a little. Our main goal is to calculate a $\frac{L}{\Vec{W_{i,j}^{k}}}$, where 
