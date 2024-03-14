@@ -1,0 +1,18 @@
+lr: 0.001
+
+training_params:
+  epoch_num: 10
+  dataloader_params:
+    batch_size: 64
+    shuffle: true
+
+eval_params:
+  batch_size: 64
+  shuffle: true
+
+
+fullycon_layers:
+  - name: Linear
+    args: [240, 500]
+  - name: Linear
+    args: [500, 1]
