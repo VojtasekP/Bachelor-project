@@ -1,146 +1,81 @@
-from pathlib import Path
-
 import numpy as np
-import torch
+#import matplotlib.pyplot as plt
+#from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+from pathlib import Path
+#from torch.utils.data import random_split
+import torch
+#import scipy.io.wavfile as wavfile
+import re
+#import random
+#from itertools import chain
 
-cuda0 = torch.device('cuda:0')
+DEVICE = 'cuda'
 
-# ctrl + alt + o
-
-class CustomDict:
-    def __init__(self):
-        self._data = {}
-
-    def __getitem__(self, key):
-        return self._data[key]
-
-    def __setitem__(self, key, value):
-        if key in self._data:
-            if isinstance(value, np.ndarray):
-                self._data[key] = np.concatenate((self._data[key], value))
-            else:
-                raise TypeError("Only numpy arrays can be added to existing numpy arrays.")
-        else:
-            if isinstance(value, np.ndarray):
-                self._data[key] = value
-            else:
-                raise TypeError("Values must be numpy arrays.")
-
-    def __delitem__(self, key):
-        del self._data[key]
-
-    def keys(self):
-        return self._data.keys()
-
-    def values(self):
-        return self._data.values()
-
-    def items(self):
-        return self._data.items()
-
-    def __repr__(self):
-        return repr(self._data)
+# ctrl alt O
 
 
 # Function to get key and value by index
 
-def get_position_label_start_by_index(index, list_of_dicts: list[CustomDict]):
-    # Initialize cumulative length
-    cumulative_length = 0
-
-    # Iterate through dictionaries in the list
-    for i, dictionary in enumerate(list_of_dicts):
-        # Iterate through key-value pairs in each dictionary
-        for key, value in dictionary.items():
-            # Calculate the cumulative length
-            length = len(value)
-            if index < cumulative_length + length:
-                return i, key, value[index - cumulative_length]
-            cumulative_length += length
-
-    # If index is out of range, return None
-    # return None, None, None
-
-
 class SignalDataset(Dataset):
 
-    def __init__(self, step: int, window_size: int, paths_and_classes: dict, device=torch.device("cpu")):
-        source_dtype = "float32"
+    def __init__(self, step: int, window_size: int, bin_setup: list, device="cpu", source_dtype="float32"):
+
         self.step = step
         self.window_size = window_size
         self.device = device
 
-        paths = list(paths_and_classes)  # creates list of paths
-        class_distribution = list(paths_and_classes.values())
+        self.bin_setup = bin_setup
 
-        self._load_signals(paths, source_dtype)  # loads raw data in form of numpy array in to a list
-        self._create_sampling(class_distribution)  # creates indices of starts of intervals
-
-    def _load_signals(self, paths: list, dtype="float32"):
-        self.loaded_signal = []
-        for i, path in enumerate(paths):
-            # count = np.fromfile(path, dtype=dtype).shape[0]
-            self.loaded_signal.append(np.fromfile(path, dtype=dtype))
-
-    def _create_sampling(self, class_distributions: list):
+        self.loaded_signal = {}
 
         self.sampling = []
         self.num_of_samples = []
 
-        for i, distribution in enumerate(class_distributions):
+        self.indices = [
+            # ('class', sig_id, sample_id)
+        ]
 
-            assert len(distribution["size"]) == len(distribution["labels"]), "labels and sizes are mismatched"
+        self.label_set = set()
+        self.label_dict = {}
 
-            full_length = np.sum(distribution["size"])
-            recording_size = self.loaded_signal[i].shape[0]  # number of points
-            already_binned = 0
-            shift = 4 * self.window_size  # later will be dependent on frequency of sensor
-            bins_per_label = CustomDict()
+        self._load_signals()  # loads raw data in form of numpy arrray in to a list
+        self._create_index_setup()  # creates indices of starts of intervals
 
-            for idx in range(len(distribution["labels"])):
-                # later will be size calculated based on the frequency and derived from actual seconds recorded
-                fraction_of_sample = distribution["size"][idx] / full_length
-                length_of_sample = int(np.floor(fraction_of_sample * recording_size))
+    def _load_signals(self, dtype="float32"):
+        for bin_config in self.bin_setup:
+            label = bin_config['label']
+            i_min, i_max = bin_config['interval']
+            if label not in self.loaded_signal:
+                self.loaded_signal[label] = []
 
-                start = already_binned + shift
-                end = length_of_sample + already_binned - shift
-                bins = np.arange(start=start, stop=end, step=self.step)
-                bins_per_label[distribution["labels"][idx]] = bins
-                self.num_of_samples.append(bins.size)
+            self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'], dtype=dtype)[i_min: i_max])  # interval
 
-                already_binned += length_of_sample
-            self.sampling.append(bins_per_label)
 
-    # 0:      26100000, 26171875: 52271875
-    # 400000: 25700000, 26571875: 51871875
+    def _create_index_setup(self):
+        for label, signal_list in self.loaded_signal.items():
+            self.label_set.add(label)
+            for sig_id, s in enumerate(signal_list):
+                for sample_id in range(0, len(s)-self.window_size, self.step):
+                    self.indices.append((label, sig_id, sample_id))
+
+        for i, label in enumerate(sorted(self.label_set)):
+            self.label_dict[label] = i
 
     def __len__(self):
-        return np.sum(self.num_of_samples)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        position, label, start = get_position_label_start_by_index(idx, self.sampling)
-        return torch.tensor(self.loaded_signal[position][start: start + self.window_size]), torch.tensor(label)
+        label, sig_id, sample_id = self.indices[idx]
+        return torch.tensor(self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size]), torch.tensor(self.label_dict[label])
 
 
-directory_of_signal_data = "/home/petr/Documents/Motor_projekt/Data"
-list_of_paths = sorted(Path(directory_of_signal_data).glob('*.bin'))
-list_of_classes = [{"labels": [0, 10], "size": [15, 15]},
-                   {"labels": [1, 11], "size": [15, 15]},
-                   {"labels": [2, 12], "size": [15, 15]},
-                   {"labels": [3, 13], "size": [15, 15]},
-                   {"labels": [4, 14], "size": [15, 15]},
-                   {"labels": [5, 15], "size": [15, 15]},
-                   {"labels": [6, 16], "size": [15, 15]},
-                   {"labels": [7, 17], "size": [15, 15]},
-                   {"labels": [8, 18], "size": [15, 15]}]
 
-data_specs = dict(zip(list_of_paths, list_of_classes))
-"""
-
-"""
-
-dataset = SignalDataset(step=1000, window_size=1000, paths_and_classes=data_specs, device=cuda0)
+signal_data_dir = "/mnt/ssd/datasets/AE_PETR_motor/"
+sr = 1562500
 
 
-print(dataset[len(dataset)-1])
+bin_setup = [{"label": i.stem, "interval": [0, 15*sr], "bin_path": list(i.glob('*.bin'))[0]} for i in Path(signal_data_dir).glob('WUP*') if re.search(r'[\d]$', i.stem)]
+
+
+sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
