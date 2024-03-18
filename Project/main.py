@@ -14,48 +14,10 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import random
 from inceptionTime import Inception, InceptionBlock
-
+from signal_dataset import SignalDataset
 DEVICE = 'cuda'
 torch.manual_seed(22)
 
-
-class SineDataset(Dataset):
-    """Face Landmarks dataset."""
-
-    def __init__(self, data_count, device='cpu'):
-        self.freq = 10 * torch.rand(size=(data_count, 1), device=device) + 1
-
-        random_uniform_shift = 10 * torch.rand(size=(data_count, 1), device=device)
-        # random_normal_shift = torch.normal(0, 1, size=(1, 1), device=DEVICE)
-
-        self.points = torch.arange(0, 6, 1 / 40, device=device).repeat(data_count, 1) + random_uniform_shift
-        self.phase = torch.normal(0, 5, size=(data_count, 1), device=device)
-        self.amplitude = (self.points[0] - random_uniform_shift[0]) ** 2
-        # print(self.amplitude)
-        self.data_matrix = torch.sin(self.points * self.freq + self.phase)
-        self.data_matrix_without_noise = torch.sin(self.points * self.freq + self.phase)
-        for i in range(data_count):
-            if random.random() < 0.3:
-                self.amplitude = torch.flip(self.amplitude, dims=(-1,))
-                random_noise = (self.amplitude + 1) * torch.normal(0, 2, size=(1, len(self.data_matrix[0])),
-                                                                   device=device)
-                self.data_matrix_without_noise[i] = self.amplitude * self.data_matrix[i]
-                self.data_matrix[i] = self.amplitude * self.data_matrix[i] + random_noise
-            elif 0.3 <= random.random() < 0.7:
-                random_noise = (self.amplitude + 1) * torch.normal(0, 2, size=(1, len(self.data_matrix[0])),
-                                                                   device=device)
-                self.data_matrix_without_noise[i] = self.amplitude * self.data_matrix[i]
-                self.data_matrix[i] = self.amplitude * self.data_matrix[i] + random_noise
-            else:
-                random_noise = torch.normal(0, 2, size=(1, len(self.data_matrix[0])), device=device)
-                self.data_matrix_without_noise[i] = self.data_matrix[i]
-                self.data_matrix[i] = self.data_matrix[i] + random_noise
-
-    def __len__(self):
-        return len(self.freq)
-
-    def __getitem__(self, idx):
-        return self.data_matrix[idx], self.freq[idx]
 
 
 class NN(nn.Module):
@@ -213,6 +175,14 @@ class NeuroNet:
             points, freq = data
             return print(f'predicted freq: {self.model(points)}, real freq: {freq}')
 
+signal_data_dir = "/home/petr/Documents/Motor_project/AE_PETR_motor/"
+sr = 1562500
+
+
+bin_setup = [{"label": i.stem, "interval": [0, 15*sr], "bin_path": list(i.glob('*.bin'))[0]} for i in Path(signal_data_dir).glob('WUP*') if re.search(r'[\d]$', i.stem)]
+
+
+sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
 dataset = SineDataset(128 * 128, DEVICE)
 train_data, test_data = random_split(dataset, [100 * 128, 28 * 128])

@@ -71,11 +71,5 @@ class SignalDataset(Dataset):
 
 
 
-signal_data_dir = "/mnt/ssd/datasets/AE_PETR_motor/"
-sr = 1562500
 
 
-bin_setup = [{"label": i.stem, "interval": [0, 15*sr], "bin_path": list(i.glob('*.bin'))[0]} for i in Path(signal_data_dir).glob('WUP*') if re.search(r'[\d]$', i.stem)]
-
-
-sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
