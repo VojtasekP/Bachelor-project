@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import yaml
 from icecream import ic
@@ -12,92 +11,17 @@ from torch.utils.data import Dataset
 from torch.utils.data import random_split
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-import random
-from inceptionTime import Inception, InceptionBlock
+
 from signal_dataset import SignalDataset
+import networks
+import re
+
 DEVICE = 'cuda'
 torch.manual_seed(22)
 
 
 
-class NN(nn.Module):
-    def __init__(self, layers_config: list[dict]):
-        super().__init__()
-        self.layers = []
-        for layer_config in layers_config:
-            self.layers.append(
-                eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.layers = nn.ModuleList(self.layers)
 
-    def forward(self, x):
-        for layer in self.layers:
-            x = F.relu(layer(x))
-        return x
-
-
-class CNN(nn.Module):
-    def __init__(self, conv_layers_config: list[dict], layers_config: list[dict]):  # todo: repair
-        super().__init__()
-        self.conv_layers = []
-        self.layers = []
-        for layer_config in conv_layers_config:
-            self.conv_layers.append(
-                eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        for layer_config in layers_config:
-            self.layers.append(
-                eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.layers = nn.ModuleList(self.layers)
-        self.conv_layers = nn.ModuleList(self.conv_layers)
-
-    def forward(self, x):
-        x = torch.unsqueeze(x, 1)
-
-        for layer in self.conv_layers:
-            x = F.relu(layer(x))
-
-        x = torch.flatten(x, -1)
-
-        for layer in self.fullycon_layers:
-            x = F.relu(layer(x))
-        return x
-
-
-class InceptionTime(nn.Module):
-    def __init__(self, layers_config: list[dict]):
-        super().__init__()
-        self.layers = []
-        for layer_config in layers_config:
-            self.layers.append(
-                eval(layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.inception_layers = nn.ModuleList(self.layers)
-        self.pool = nn.AdaptiveAvgPool1d(output_size=1)
-        self.lin = nn.Linear(in_features=128, out_features=1)
-
-    def forward(self, x):
-        x = torch.reshape(input=x, shape=(-1, 1, 240))
-        for layer in self.inception_layers:
-            x = F.relu(layer(x))
-        x = self.pool(x)
-        x = torch.flatten(x, 1)
-        x = F.relu(self.lin(x))
-        return x
-
-
-class RNN(nn.Module):
-    def __init__(self, layers_config: list[dict]):
-        super().__init__()
-        self.layers = []
-        for layer_config in layers_config:
-            self.layers.append(
-                eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.layers = nn.ModuleList(self.layers)
-
-    def forward(self, x):
-        x = torch.unsqueeze(x, 1)
-        for layer in self.layers[:-1]:
-            x, _ = layer(input=x)
-        x = self.layers[-1](x)
-        return x[:, -1, :]
 
 
 class NeuroNet:
@@ -124,11 +48,11 @@ class NeuroNet:
 
     def build_model(self, yaml_path: Path):
         if yaml_path == Path('yaml_configs/MLP.yaml'):
-            return NN(self.layers_config)
+            return networks.NN(self.layers_config)
         if yaml_path == Path('yaml_configs/InceptionTime.yaml'):
-            return InceptionTime(self.layers_config)
+            return networks.InceptionTime(self.layers_config)
         if yaml_path == Path('yaml_configs/LSTM.yaml') or yaml_path == Path('yaml_configs/GRU.yaml'):
-            return RNN(self.layers_config)
+            return networks.RNN(self.layers_config)
 
     def train_model(self, training_data: Dataset, testing_data: Dataset):
         writer = SummaryWriter(comment="_Inception_Time")
@@ -184,8 +108,7 @@ bin_setup = [{"label": i.stem, "interval": [0, 15*sr], "bin_path": list(i.glob('
 
 sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
-dataset = SineDataset(128 * 128, DEVICE)
-train_data, test_data = random_split(dataset, [100 * 128, 28 * 128])
+train_data, test_data = random_split(sd, [0.8, 0.2])
 
 neuro_net = NeuroNet(Path('yaml_configs/InceptionTime.yaml'))
 
