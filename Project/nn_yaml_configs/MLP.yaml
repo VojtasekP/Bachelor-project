@@ -1,0 +1,21 @@
+
+lr: 0.01
+
+training_params:
+  epoch_num: 20
+  dataloader_params:
+    batch_size: 128
+    shuffle: true
+
+eval_params:
+  batch_size: 128
+  shuffle: true
+
+
+layers:
+  - name: Linear
+    args: [1000, 2000]
+  - name: Linear
+    args: [2000, 500]
+  - name: Linear
+    args: [500, 9]

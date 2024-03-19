@@ -1,0 +1,24 @@
+
+lr: 0.001
+
+training_params:
+  epoch_num: 10
+  dataloader_params:
+    batch_size: 64
+    shuffle: true
+
+eval_params:
+  batch_size: 64
+  shuffle: true
+
+layers:
+  - name: GRU
+    kwargs:
+      input_size: 240
+      hidden_size: 64
+      num_layers: 1
+      batch_first: True
+  - name: Linear
+    kwargs:
+      in_features: 64
+      out_features: 1
