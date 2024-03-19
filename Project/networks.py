@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import numpy as np
@@ -16,8 +15,10 @@ from tqdm import tqdm
 import random
 from inceptionTime import Inception, InceptionBlock
 from signal_dataset import SignalDataset
+
 DEVICE = 'cuda'
 torch.manual_seed(22)
+
 
 class NN(nn.Module):
     def __init__(self, layers_config: list[dict]):
@@ -29,13 +30,14 @@ class NN(nn.Module):
         self.layers = nn.ModuleList(self.layers)
 
     def forward(self, x):
-        for layer in self.layers:
+        for layer in self.layers[:-1]:
             x = F.relu(layer(x))
+        x = self.layers[-1](x)
         return x
 
 
 class CNN(nn.Module):
-    def __init__(self, conv_layers_config: list[dict], layers_config: list[dict]):  # todo: repair
+    def __init__(self, conv_layers_config: list[dict], layers_config: list[dict]):
         super().__init__()
         self.conv_layers = []
         self.layers = []
@@ -56,8 +58,9 @@ class CNN(nn.Module):
 
         x = torch.flatten(x, -1)
 
-        for layer in self.fullycon_layers:
+        for layer in self.layers[-1]:
             x = F.relu(layer(x))
+        x = self.fullycon_layers[-1](x)
         return x
 
 
@@ -81,13 +84,14 @@ class InceptionTime(nn.Module):
         x = F.relu(self.lin(x))
         return x
 
+
 class attention_RNN(nn.Module):
     def __init__(self):
         super().__init__()
-        self.rnn = nn.LSTM(input_size=240, hidden_size=64, num_layers=1, batch_first = True)
+        self.rnn = nn.LSTM(input_size=240, hidden_size=64, num_layers=1, batch_first=True)
         self.bn = nn.BatchNorm1d(num_features=1)
         # self.conv = nn.Conv1d(in_channels=1, out_channels=1, kernel_size=6, stride=2)
-        self.attention = nn.Linear(64,64)
+        self.attention = nn.Linear(64, 64)
 
         self.linear = nn.Linear(64, 1)
 
@@ -102,6 +106,7 @@ class attention_RNN(nn.Module):
         out = torch.squeeze(repre, 1)
         out = F.relu(self.linear(out))
         return out
+
 
 class RNN(nn.Module):
     def __init__(self, layers_config: list[dict]):
