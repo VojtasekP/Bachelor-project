@@ -15,22 +15,37 @@ conv_layers:
   - name: Conv1d
     kwargs:
       in_channels: 1
-      out_channels: 4
+      out_channels: 1
+      kernel_size: 1
+  - name: MaxPool1d
+    kwargs:
       kernel_size: 3
-      padding: 1
+      stride: 2
   - name: Conv1d
     kwargs:
-      in_channels: 4
-      out_channels: 8
+      in_channels: 1
+      out_channels: 1
       kernel_size: 3
-      padding: 1
+  - name: MaxPool1d
+    kwargs:
+      kernel_size: 3
+      stride: 2
+  - name: Conv1d
+    kwargs:
+      in_channels: 1
+      out_channels: 1
+      kernel_size: 5
+  - name: MaxPool1d
+    kwargs:
+      kernel_size: 3
+      stride: 2
+  - name: AdaptiveAvgPool1d
+    kwargs:
+      output_size: 6
+
 
 layers:
   - name: Linear
     kwargs:
-        in_features: 240
-        out_features: 64
-  - name: Linear
-    kwargs:
-        in_features: 64
-        out_features: 10
+        in_features: 994
+        out_features: 9
