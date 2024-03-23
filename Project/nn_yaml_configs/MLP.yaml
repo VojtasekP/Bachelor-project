@@ -1,8 +1,18 @@
 
 lr: 0.01
+model:
+  type: MLP
+  kwargs:
+    layers:
+      - name: Linear
+        args: [ 1000, 2000 ]
+      - name: Linear
+        args: [ 2000, 500 ]
+      - name: Linear
+        args: [ 500, 9 ]
 
 training_params:
-  epoch_num: 20
+  epoch_num: 2
   dataloader_params:
     batch_size: 128
     shuffle: true
@@ -11,11 +21,3 @@ eval_params:
   batch_size: 128
   shuffle: true
 
-
-layers:
-  - name: Linear
-    args: [1000, 2000]
-  - name: Linear
-    args: [2000, 500]
-  - name: Linear
-    args: [500, 9]

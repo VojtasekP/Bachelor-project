@@ -1,7 +1,31 @@
+
 lr: 0.001
 
+
+model:
+  type: CNN
+  kwargs:
+    conv_layers:
+      - name: Conv1d
+        kwargs:
+          in_channels: 1
+          out_channels: 1
+          kernel_size: 100
+
+    layers:
+      - name: Linear
+        kwargs:
+            in_features: 1000
+            out_features: 9
+      - name: Linear
+        kwargs:
+            in_features: 1000
+            out_features: 9
+
+
+
 training_params:
-  epoch_num: 10
+  epoch_num: 2
   dataloader_params:
     batch_size: 64
     shuffle: true
@@ -11,41 +35,4 @@ eval_params:
   shuffle: true
 
 
-conv_layers:
-  - name: Conv1d
-    kwargs:
-      in_channels: 1
-      out_channels: 1
-      kernel_size: 1
-  - name: MaxPool1d
-    kwargs:
-      kernel_size: 3
-      stride: 2
-  - name: Conv1d
-    kwargs:
-      in_channels: 1
-      out_channels: 1
-      kernel_size: 3
-  - name: MaxPool1d
-    kwargs:
-      kernel_size: 3
-      stride: 2
-  - name: Conv1d
-    kwargs:
-      in_channels: 1
-      out_channels: 1
-      kernel_size: 5
-  - name: MaxPool1d
-    kwargs:
-      kernel_size: 3
-      stride: 2
-  - name: AdaptiveAvgPool1d
-    kwargs:
-      output_size: 6
 
-
-layers:
-  - name: Linear
-    kwargs:
-        in_features: 994
-        out_features: 9

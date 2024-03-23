@@ -4,7 +4,7 @@ activation: ReLU
 lr: 0.001
 bottleneck_channels: 32
 training_params:
-  epoch_num: 5
+  epoch_num: 2
   dataloader_params:
     batch_size: 128
     shuffle: true
