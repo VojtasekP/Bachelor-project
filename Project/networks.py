@@ -45,22 +45,21 @@ class CNN(nn.Module):
 
         for layer_config in conv_layers_config:
             self.conv_layers.append(
-                eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.conv_layers = nn.ModuleList(self.conv_layers)
+                nn.Conv1d(padding="same", *layer_config.get('args', []), **layer_config.get('kwargs', {})))
 
         for layer_config in layers_config:
             self.layers.append(
                 eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
 
         self.layers = nn.ModuleList(self.layers)
+        self.conv_layers = nn.ModuleList(self.conv_layers)
         # self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2)
 
     def forward(self, x):
         x = torch.unsqueeze(x, 1)
         for layer in self.conv_layers:
             x = F.relu(layer(x))
-        x = torch.squeeze(x, 1)
-        # print(x)
+        x = torch.flatten(x, 1)
         for layer in self.layers[:-1]:
             x = F.relu(layer(x))
         x = self.layers[-1](x)

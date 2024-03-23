@@ -1,23 +1,20 @@
+import re
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-from torch.utils.data import random_split
-from torch.utils.tensorboard import SummaryWriter
-import torch.nn.functional as F
-from tqdm import tqdm
-from tqdm import trange
-from signal_dataset import SignalDataset
-import networks
-import re
-from sklearn.metrics import confusion_matrix
 from matplotlib import pyplot as plt
+from sklearn.metrics import confusion_matrix, accuracy_score
+from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import trange
+import seaborn as sns
+import networks
+from signal_dataset import SignalDataset
 
 DEVICE = torch.device('cuda')
 torch.manual_seed(21)
@@ -35,15 +32,18 @@ class NeuroNet:
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer,
                                                                     T_max=self.training_params["epoch_num"])
+
         self.criterion = nn.CrossEntropyLoss()
         self.history = []
         self.loss_avg = 0
 
     def _load_yaml(self) -> None:
-
+        #  TODO: repair yaml_config loading
         with self.control_center.open(mode="r") as yaml_file:
             data = yaml.load(yaml_file, Loader=yaml.SafeLoader)
-
+        self.model_params = data["model"]
+        self.type_of_network = self.model_params["type"]
+        self.layers_config = self.model_params["layers"]
         self.training_params = data["training_params"]
         self.eval_params = data["eval_params"]
         self.lr = data["lr"]
@@ -52,23 +52,26 @@ class NeuroNet:
             self.conv_layers_config = data["conv_layers"]
 
     def build_model(self):
+        # TODO: make in_channels as parameter
         if self.control_center == Path('nn_yaml_configs/MLP.yaml'):
             return networks.NN(self.layers_config)
         if self.control_center == Path('nn_yaml_configs/InceptionTime.yaml'):
             return networks.InceptionTime(self.layers_config)
-        if self.control_center == Path('nn_yaml_configs/LSTM.yaml') or self.control_center == Path('yaml_configs/GRU.yaml'):
+        if self.control_center == Path('nn_yaml_configs/LSTM.yaml') or self.control_center == Path(
+                'yaml_configs/GRU.yaml'):
             return networks.RNN(self.layers_config)
         if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
             # return networks.CNN(self.conv_layers_config, self.layers_config)
             return networks.CNNOld()
 
-    def train_model(self, training_data: Dataset):
-        step = 0
+    def train_model(self, training_data: Dataset, testing_data: Dataset):
+
         train_dataloader = DataLoader(training_data, **self.training_params.get("dataloader_params", {}))
 
         epochs = trange(self.training_params["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
         writer = SummaryWriter(comment=f"_{self.control_center.stem}_{self.training_params['epoch_num']}_{self.lr}")
 
+        total_batch_id = 1  # TODO: total batch count and add validation metrics to tensorboard
         for epoch in epochs:
             self.model.train()
             for batch_id, (inputs, targets) in enumerate(train_dataloader):
@@ -78,37 +81,58 @@ class NeuroNet:
                 outputs = self.model(inputs)
                 # print(outputs)
                 # print(outputs.size())
-                # print(targets)
                 loss = self.criterion(outputs, targets)
                 loss.backward()
                 self.optimizer.step()
-                writer.add_scalar('Training Loss', loss, global_step=step)
-                step += 1
+                writer.add_scalar('Training Loss', loss, global_step=total_batch_id)
+
+                if total_batch_id % 64 == 0:
+                    self.test_model(testing_data, writer, total_batch_id)
+                total_batch_id += 1
                 epochs.set_description(f"Epoch #{epoch + 1}")
-
-                # epochs.refresh()
-
             last_lr = self.scheduler.get_last_lr()[0]
             writer.add_scalar('learning rate', last_lr, global_step=epoch)
-            self.scheduler.step()
+            self.scheduler.step()  # TODO: after every epoch reset the scheduler
+
+            # epochs.refresh()
+            #
+            # self.eval_model(testing_data, writer, )
             writer.close()
 
-    def test_model(self, testing_data: Dataset):
+    def test_model(self, testing_data: Dataset, writer, count):
         self.model.eval()
         history = []
+        y_pred = []  # save prediction
+        y_true = []  # save ground truth
+        class_num = 9
+        cm = np.zeros((class_num, class_num))
         test_dataloader = DataLoader(testing_data, **self.eval_params)
         with torch.no_grad():
-            for batch_id, (inputs, targets) in enumerate(test_dataloader):
+            for (inputs, targets) in test_dataloader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
                 history.append(loss)
                 self.loss_avg = sum(history) / len(history)
-                # self.writer.add_scalar('validation loss', self.mse_avg, global_step=epoch)
+                writer.add_scalar('validation loss', self.loss_avg, global_step=count)
 
-            print(f"Test loss is {self.loss_avg}")
+                # CONFUSION MATRIX
+                predictions = torch.argmax(outputs, dim=1).cpu().numpy()
+                y_pred.extend(predictions)  # save prediction
+                targets = targets.data.cpu().numpy()
+                y_true.extend(targets)
 
-        # torch.optim.lr_scheduler.print_lr()
+            cm = confusion_matrix(y_true, y_pred, labels=np.arange(class_num))
+
+            df_cm = pd.DataFrame(cm / np.sum(cm, axis=1)[:, None], index=[i for i in range(class_num)],
+                                 columns=[i for i in range(class_num)])
+            plt.figure(figsize=(12, 7))
+            accuracy = accuracy_score(y_true, y_pred)
+            writer.add_figure(tag="Confusion matrix", figure=sns.heatmap(df_cm, annot=True, fmt=".1f").get_figure(),
+                              global_step=count)
+            writer.add_scalar('Accuracy', accuracy, global_step=count)
+
+        # # torch.optim.lr_scheduler.print_lr()
 
     def predict(self, data: torch.Tensor):
         with torch.no_grad():
@@ -125,24 +149,21 @@ class NeuroNet:
 
         self.model.eval()
         class_num = 9
-        cm = np.zeros((class_num, class_num))
 
+        y_pred = []  # save predction
+        y_true = []  # save ground truth
         with torch.no_grad():
             for (inputs, targets) in test_dataloader:
                 inputs = inputs.to(DEVICE)
                 # print(f"inpots are {inputs}")
                 outputs = self.model(inputs)
                 # print(f"outputs are {outputs}")
-                predictions = torch.argmax(outputs, dim=1)
-                # print(f"prediction is {predictions}")
-                predictions = predictions.cpu()
-                predictions = np.array(predictions)
-                cm_p = confusion_matrix(targets, predictions, labels=np.arange(class_num))
-                cm = cm + cm_p
+                predictions = torch.argmax(outputs, dim=1).cpu().numpy()
+                y_pred.extend(predictions)  # save prediction
+                targets = targets.data.cpu().numpy()
+                y_true.extend(targets)
 
-
-
-        cm_collumn_sum = cm.sum(axis=0)
+            cm = confusion_matrix(y_true, y_pred, labels=np.arange(class_num))
 
         plt.figure(figsize=(10, 10))
         plt.imshow(cm, cmap='Greens')
@@ -156,8 +177,8 @@ class NeuroNet:
 
         correct_pred = 0
         total_pred = 0
-        for i in range((len(cm_collumn_sum))):
-            for j in range((len(cm_collumn_sum))):
+        for i in range((len(cm.sum(axis=0)))):
+            for j in range((len(cm.sum(axis=0)))):
                 if i == j:
                     correct_pred = correct_pred + cm[i][j]
                     total_pred = total_pred + cm[i][j]
@@ -170,16 +191,19 @@ class NeuroNet:
 signal_data_dir = "/home/petr/Documents/Motor_project/AE_PETR_motor/"
 sr = 1562500
 
+glob = Path(signal_data_dir).glob('WUP*')
 bin_setup = [{"label": i.stem, "interval": [0, 15 * sr], "bin_path": list(i.glob('*.bin'))[0]} for i in
-             Path(signal_data_dir).glob('WUP*') if re.search(r'\d$', i.stem)]
-
+             glob if re.search(r'\d$', i.stem)]
 
 sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
 train_data, test_data = random_split(sd, [0.8, 0.2])
 # print(train_data[0])
-neuro_net = NeuroNet(Path('nn_yaml_configs/InceptionTime.yaml'))
+neuro_net = NeuroNet(Path('nn_yaml_configs/CNN.yaml'))
 
-neuro_net.train_model(train_data)
+neuro_net.train_model(train_data, test_data)
 
 neuro_net.eval_model(test_data)
+
+# TODO: abc.ABC template on material model for prediction
+# TODO: learn pycharm keybindings, etc.  ctrl, shift, alt, arrows; ctrl+alt+m/v
