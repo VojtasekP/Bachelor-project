@@ -1,2 +1,4 @@
 # Bachelor's project
-In the homeworks folder are the components, that I'll put into the final project. In the project folder is the final code, that will be used for my model in my bachelor thesis.
+The goal of this project is to create a working pipeline for processing signal data and building deep learning models for their subsequent classification. Configuration of dataset properties and model properties will all be in YAML files for further reusability in future projects.
+
+The project folder contains the final code. 
