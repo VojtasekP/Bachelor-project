@@ -17,7 +17,7 @@ import networks
 from signal_dataset import SignalDataset
 
 DEVICE = torch.device('cuda')
-torch.manual_seed(21)
+# torch.manual_seed(21)
 
 
 class NeuroNet:
@@ -41,40 +41,47 @@ class NeuroNet:
         #  TODO: repair yaml_config loading
         with self.control_center.open(mode="r") as yaml_file:
             data = yaml.load(yaml_file, Loader=yaml.SafeLoader)
+
+        self.lr = data["lr"]
         self.model_params = data["model"]
-        self.type_of_network = self.model_params["type"]
-        self.layers_config = self.model_params["layers"]
+        self.network_type = self.model_params["type"]
         self.training_params = data["training_params"]
         self.eval_params = data["eval_params"]
-        self.lr = data["lr"]
-        self.layers_config = data['layers']
-        if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
-            self.conv_layers_config = data["conv_layers"]
+        self.layers_configs = []
+
+        for name, layer_config in self.model_params["kwargs"].items():
+            self.layers_configs.append({name: layer_config})
+        print(self.layers_configs)
+        # self.layers_config = data['layers']
+        # if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
+        #     self.conv_layers_config = data["conv_layers"]
 
     def build_model(self):
         # TODO: make in_channels as parameter
-        if self.control_center == Path('nn_yaml_configs/MLP.yaml'):
-            return networks.NN(self.layers_config)
-        if self.control_center == Path('nn_yaml_configs/InceptionTime.yaml'):
-            return networks.InceptionTime(self.layers_config)
-        if self.control_center == Path('nn_yaml_configs/LSTM.yaml') or self.control_center == Path(
-                'yaml_configs/GRU.yaml'):
-            return networks.RNN(self.layers_config)
-        if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
-            # return networks.CNN(self.conv_layers_config, self.layers_config)
-            return networks.CNNOld()
+        match self.network_type:
+            case "MLP":
+                return networks.MLP(self.layers_configs)
+            case "Inception time" | "Inception" | "Inception_time":
+                return networks.InceptionTime(self.layers_configs)
+            case "LSTM" | "GRU":
+                # return networks.RNN(self.layers_configs)
+                return networks.AttentionRNN()
+            case "CNN":
+                return networks.CNNOld()
 
     def train_model(self, training_data: Dataset, testing_data: Dataset):
 
         train_dataloader = DataLoader(training_data, **self.training_params.get("dataloader_params", {}))
 
         epochs = trange(self.training_params["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
-        writer = SummaryWriter(comment=f"_{self.control_center.stem}_{self.training_params['epoch_num']}_{self.lr}")
+        writer = SummaryWriter(comment=f"_{self.control_center.stem}_{self.eval_params['batch_size']}_"
+                                       f"{self.training_params['epoch_num']}_{self.lr}")
 
         total_batch_id = 1  # TODO: total batch count and add validation metrics to tensorboard
         for epoch in epochs:
-            self.model.train()
-            for batch_id, (inputs, targets) in enumerate(train_dataloader):
+
+            for (inputs, targets) in train_dataloader:
+                self.model.train()
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 # targets = F.one_hot(targets, num_classes = 9)
                 self.optimizer.zero_grad()
@@ -85,10 +92,9 @@ class NeuroNet:
                 loss.backward()
                 self.optimizer.step()
                 writer.add_scalar('Training Loss', loss, global_step=total_batch_id)
-
-                if total_batch_id % 64 == 0:
-                    self.test_model(testing_data, writer, total_batch_id)
                 total_batch_id += 1
+                if total_batch_id % 100 == 0:
+                    self.test_model(testing_data, writer, total_batch_id)
                 epochs.set_description(f"Epoch #{epoch + 1}")
             last_lr = self.scheduler.get_last_lr()[0]
             writer.add_scalar('learning rate', last_lr, global_step=epoch)
@@ -101,7 +107,6 @@ class NeuroNet:
 
     def test_model(self, testing_data: Dataset, writer, count):
         self.model.eval()
-        history = []
         y_pred = []  # save prediction
         y_true = []  # save ground truth
         class_num = 9
@@ -112,8 +117,8 @@ class NeuroNet:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
-                history.append(loss)
-                self.loss_avg = sum(history) / len(history)
+                self.history.append(loss)
+                self.loss_avg = sum(self.history) / len(self.history)
                 writer.add_scalar('validation loss', self.loss_avg, global_step=count)
 
                 # CONFUSION MATRIX
@@ -197,7 +202,7 @@ bin_setup = [{"label": i.stem, "interval": [0, 15 * sr], "bin_path": list(i.glob
 
 sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
-train_data, test_data = random_split(sd, [0.8, 0.2])
+train_data, test_data = random_split(sd, [0.7, 0.3])
 # print(train_data[0])
 neuro_net = NeuroNet(Path('nn_yaml_configs/CNN.yaml'))
 
