@@ -73,20 +73,21 @@ class CNN(nn.Module):
 class CNNOld(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv1d(1, 1, 200, padding=50)
+        self.conv1 = nn.Conv1d(1, 6, 200, padding=50)
         self.pool = nn.MaxPool1d(2, 2)
         self.conv2 = nn.Conv1d(6, 16, 5)
-        self.bn = nn.BatchNorm1d(991)
-        self.fc1 = nn.Linear(901, 2000)
-        self.fc2 = nn.Linear(2000, 500)
-        self.fc3 = nn.Linear(500, 9)
+        self.bn = nn.BatchNorm1d(14352)
+        self.fc1 = nn.Linear(14352, 5000)
+        self.fc2 = nn.Linear(5000, 1000)
+        self.fc3 = nn.Linear(1000, 9)
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
         x = torch.unsqueeze(x,1)
-        x = self.conv1(x)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        # x = self.bn(x)
+        x = self.bn(x)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.dropout(x)
@@ -155,8 +156,13 @@ class RNN(nn.Module):
         self.layers = nn.ModuleList(self.layers)
 
     def forward(self, x):
+
         x = torch.unsqueeze(x, 1)
-        for layer in self.layers[:-1]:
-            x, _ = layer(input=x)
+
+        for layer in self.layers[:-2]:
+            x, (h0, c0) = layer(input=x)
+        x = torch.flatten(x, 1)
+
+        x = self.layers[-2](x)
         x = self.layers[-1](x)
-        return x[:, -1, :]
+        return x

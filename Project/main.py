@@ -17,6 +17,8 @@ import networks
 from signal_dataset import SignalDataset
 
 DEVICE = torch.device('cuda')
+
+
 # torch.manual_seed(21)
 
 
@@ -26,12 +28,12 @@ class NeuroNet:
         self.control_center = control_center
 
         self._load_yaml()
-        self.model = self.build_model()
+        self.model = self._build_model()
         self.model.to(DEVICE)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.model_config["lr"])
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer,
-                                                                    T_max=self.training_params["epoch_num"])
+                                                                    T_max=self.model_config["training_params"]["epoch_num"])
 
         self.criterion = nn.CrossEntropyLoss()
         self.history = []
@@ -40,42 +42,36 @@ class NeuroNet:
     def _load_yaml(self) -> None:
         #  TODO: repair yaml_config loading
         with self.control_center.open(mode="r") as yaml_file:
-            data = yaml.load(yaml_file, Loader=yaml.SafeLoader)
-
-        self.lr = data["lr"]
-        self.model_params = data["model"]
-        self.network_type = self.model_params["type"]
-        self.training_params = data["training_params"]
-        self.eval_params = data["eval_params"]
+            self.model_config = yaml.load(yaml_file, Loader=yaml.SafeLoader)
         self.layers_configs = []
-
-        for name, layer_config in self.model_params["kwargs"].items():
+        for name, layer_config in self.model_config["model"]["kwargs"].items():
             self.layers_configs.append({name: layer_config})
         print(self.layers_configs)
         # self.layers_config = data['layers']
         # if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
         #     self.conv_layers_config = data["conv_layers"]
 
-    def build_model(self):
+    def _build_model(self):
         # TODO: make in_channels as parameter
-        match self.network_type:
+        # TODO: eval (from networks import network type)
+        match self.model_config["model"]["class"]:
             case "MLP":
                 return networks.MLP(self.layers_configs)
             case "Inception time" | "Inception" | "Inception_time":
                 return networks.InceptionTime(self.layers_configs)
             case "LSTM" | "GRU":
                 # return networks.RNN(self.layers_configs)
-                return networks.AttentionRNN()
+                return networks.RNN(self.layers_configs)
             case "CNN":
                 return networks.CNNOld()
 
     def train_model(self, training_data: Dataset, testing_data: Dataset):
 
-        train_dataloader = DataLoader(training_data, **self.training_params.get("dataloader_params", {}))
+        train_dataloader = DataLoader(training_data, **self.model_config["training_params"].get("dataloader_params", {}))
 
-        epochs = trange(self.training_params["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
-        writer = SummaryWriter(comment=f"_{self.control_center.stem}_{self.eval_params['batch_size']}_"
-                                       f"{self.training_params['epoch_num']}_{self.lr}")
+        epochs = trange(self.model_config["training_params"]["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
+        writer = SummaryWriter(comment=f"_{self.control_center.stem}_{self.model_config['eval_params']['batch_size']}_"
+                                       f"{self.model_config['training_params']['epoch_num']}_{self.model_config['lr']}")
 
         total_batch_id = 1  # TODO: total batch count and add validation metrics to tensorboard
         for epoch in epochs:
@@ -106,12 +102,14 @@ class NeuroNet:
             writer.close()
 
     def test_model(self, testing_data: Dataset, writer, count):
+        # TODO
         self.model.eval()
         y_pred = []  # save prediction
         y_true = []  # save ground truth
         class_num = 9
+
         cm = np.zeros((class_num, class_num))
-        test_dataloader = DataLoader(testing_data, **self.eval_params)
+        test_dataloader = DataLoader(testing_data, **self.model_config["eval_params"])
         with torch.no_grad():
             for (inputs, targets) in test_dataloader:
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
@@ -150,7 +148,7 @@ class NeuroNet:
 
     def eval_model(self, testing_data: Dataset):
 
-        test_dataloader = DataLoader(testing_data, **self.eval_params)
+        test_dataloader = DataLoader(testing_data, **self.model_config["eval_params"])
 
         self.model.eval()
         class_num = 9
@@ -202,12 +200,12 @@ bin_setup = [{"label": i.stem, "interval": [0, 15 * sr], "bin_path": list(i.glob
 
 sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
-train_data, test_data = random_split(sd, [0.7, 0.3])
+train_data, test_data = random_split(sd, [0.8, 0.2])
 # print(train_data[0])
-neuro_net = NeuroNet(Path('nn_yaml_configs/CNN.yaml'))
+neuro_net = NeuroNet(Path('nn_yaml_configs/InceptionTime.yaml'))
 
 neuro_net.train_model(train_data, test_data)
-
+print(sd.label_dict)
 neuro_net.eval_model(test_data)
 
 # TODO: abc.ABC template on material model for prediction
