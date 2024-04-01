@@ -1,24 +1,35 @@
 
-lr: 0.001
+lr: 0.01
+
+model:
+  class: LSTM
+  kwargs:
+    layers:
+      - name: LSTM
+        kwargs:
+          input_size: 1000
+          hidden_size: 512
+          num_layers: 2
+          batch_first: True
+          bidirectional: True
+      - name: Linear
+        kwargs:
+          in_features: 1024
+          out_features: 512
+      - name: Linear
+        kwargs:
+          in_features: 512
+          out_features: 9
+
+
 
 training_params:
-  epoch_num: 10
+  epoch_num: 20
   dataloader_params:
-    batch_size: 128
+    batch_size: 256
     shuffle: true
 
 eval_params:
-  batch_size: 128
+  batch_size: 256
   shuffle: true
 
-layers:
-  - name: LSTM
-    kwargs:
-      input_size: 1000
-      hidden_size: 64
-      num_layers: 2
-      batch_first: True
-  - name: Linear
-    kwargs:
-      in_features: 64
-      out_features: 9
