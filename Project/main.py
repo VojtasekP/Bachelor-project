@@ -40,16 +40,12 @@ class NeuroNet:
         self.loss_avg = 0
 
     def _load_yaml(self) -> None:
-        #  TODO: repair yaml_config loading
         with self.control_center.open(mode="r") as yaml_file:
             self.model_config = yaml.load(yaml_file, Loader=yaml.SafeLoader)
         self.layers_configs = []
-        for name, layer_config in self.model_config["model"]["kwargs"].items():
-            self.layers_configs.append({name: layer_config})
+        for layer_config in self.model_config["model"]["kwargs"]["layers"]:
+            self.layers_configs.append(layer_config)
         print(self.layers_configs)
-        # self.layers_config = data['layers']
-        # if self.control_center == Path('nn_yaml_configs/CNN.yaml'):
-        #     self.conv_layers_config = data["conv_layers"]
 
     def _build_model(self):
         # TODO: make in_channels as parameter
@@ -61,7 +57,7 @@ class NeuroNet:
                 return networks.InceptionTime(self.layers_configs)
             case "LSTM" | "GRU":
                 # return networks.RNN(self.layers_configs)
-                return networks.RNN(self.layers_configs)
+                return networks.RNN(self.layers_configs, attention=self.model_config["model"]["attention"])
             case "CNN":
                 return networks.CNNOld()
 
@@ -89,12 +85,12 @@ class NeuroNet:
                 self.optimizer.step()
                 writer.add_scalar('Training Loss', loss, global_step=total_batch_id)
                 total_batch_id += 1
-                if total_batch_id % 100 == 0:
+                if total_batch_id :
                     self.test_model(testing_data, writer, total_batch_id)
                 epochs.set_description(f"Epoch #{epoch + 1}")
             last_lr = self.scheduler.get_last_lr()[0]
             writer.add_scalar('learning rate', last_lr, global_step=epoch)
-            self.scheduler.step()  # TODO: after every epoch reset the scheduler
+            self.scheduler.step()
 
             # epochs.refresh()
             #
@@ -196,13 +192,13 @@ sr = 1562500
 
 glob = Path(signal_data_dir).glob('WUP*')
 bin_setup = [{"label": i.stem, "interval": [0, 15 * sr], "bin_path": list(i.glob('*.bin'))[0]} for i in
-             glob if re.search(r'\d$', i.stem)]
+             Path(signal_data_dir).glob('WUP*') if re.search(r'\d$', i.stem)]
 
 sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
 train_data, test_data = random_split(sd, [0.8, 0.2])
 # print(train_data[0])
-neuro_net = NeuroNet(Path('nn_yaml_configs/InceptionTime.yaml'))
+neuro_net = NeuroNet(Path('nn_yaml_configs/LSTM.yaml'))
 
 neuro_net.train_model(train_data, test_data)
 print(sd.label_dict)
