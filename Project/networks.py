@@ -28,7 +28,8 @@ class MLP(nn.Module):
             for i, layers_config in layers_config_dict.items():
                 for layer_config in layers_config:
                     self.layers.append(
-                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
+                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []),
+                                                           **layer_config.get('kwargs', {})))
         self.layers = nn.ModuleList(self.layers)
 
     def forward(self, x):
@@ -48,7 +49,8 @@ class CNN(nn.Module):
             for i, layers_config in layers_config_dict.items():
                 for layer_config in layers_config:
                     self.layers.append(
-                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
+                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []),
+                                                           **layer_config.get('kwargs', {})))
         self.layers = nn.ModuleList(self.layers)
 
         # self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2)
@@ -83,7 +85,7 @@ class CNNOld(nn.Module):
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
-        x = torch.unsqueeze(x,1)
+        x = torch.unsqueeze(x, 1)
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
@@ -135,7 +137,7 @@ class AttentionRNN(nn.Module):
         # out = self.bn(out)
         # out = torch.permute(out, (0, 2, 1))
         # out = F.relu(self.conv(x))
-        out = torch.flatten(10*out, start_dim=1)
+        out = torch.flatten(10 * out, start_dim=1)
         attention_weights = F.softmax(self.attention(out), dim=1)
         z = torch.sum(attention_weights * out, dim=1)
 
@@ -144,25 +146,24 @@ class AttentionRNN(nn.Module):
 
 
 class RNN(nn.Module):
-    def __init__(self, blocks_config: list[dict]):
+    def __init__(self, layers_config: list[dict], attention: False):
         super().__init__()
+        self.attention = attention
         self.layers = []
-        for layers_config_dict in blocks_config:
-            for i, layers_config in layers_config_dict.items():
-                for layer_config in layers_config:
-                    self.layers.append(
-                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []),
-                                                           **layer_config.get('kwargs', {})))
+        for layer in layers_config:
+            self.layers.append(
+                eval('nn.' + layer['name'])(*layer.get('args', []), **layer.get('kwargs', {})))
         self.layers = nn.ModuleList(self.layers)
+        if attention:
+            self.att = nn.Linear(512, 512)
 
     def forward(self, x):
-
+        if self.attention:
+            y = self.att(x)
         x = torch.unsqueeze(x, 1)
-
-        for layer in self.layers[:-2]:
-            x, (h0, c0) = layer(input=x)
-        x = torch.flatten(x, 1)
-
-        x = self.layers[-2](x)
+        for layer in self.layers[:-1]:
+            x, (h, c) = layer(input=x)
+        torch.flatten(x, 1)
+        x =
         x = self.layers[-1](x)
         return x

@@ -24,12 +24,19 @@ model:
           use_residual: True
 
 training_params:
+  tensorboard:  # gives information when to load train loss
+    epoch: 0
+    batch: 1
+    batch_count: 128
   epoch_num: 4
   dataloader_params:
     batch_size: 256
     shuffle: true
 
 eval_params:
+  tensorboard:  # gives information when to load validation loss and evaluation metrics in to tensorboard
+    after: Epoch
+    batch_count: 128  # only relevant if tensorboard is set to write after batch
   batch_size: 256
   shuffle: true
 

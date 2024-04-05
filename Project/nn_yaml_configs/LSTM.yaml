@@ -3,6 +3,7 @@ lr: 0.01
 
 model:
   class: LSTM
+  attention: True
   kwargs:
     layers:
       - name: LSTM
@@ -15,10 +16,6 @@ model:
       - name: Linear
         kwargs:
           in_features: 1024
-          out_features: 512
-      - name: Linear
-        kwargs:
-          in_features: 512
           out_features: 9
 
 
