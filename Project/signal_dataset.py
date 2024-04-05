@@ -1,16 +1,18 @@
 import numpy as np
-#import matplotlib.pyplot as plt
-#from torch.utils.data import DataLoader
+# import matplotlib.pyplot as plt
+# from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from pathlib import Path
-#from torch.utils.data import random_split
+# from torch.utils.data import random_split
 import torch
-#import scipy.io.wavfile as wavfile
+# import scipy.io.wavfile as wavfile
 import re
-#import random
-#from itertools import chain
+
+# import random
+# from itertools import chain
 
 DEVICE = 'cuda'
+
 
 # ctrl alt O
 
@@ -19,8 +21,8 @@ DEVICE = 'cuda'
 
 class SignalDataset(Dataset):
 
-    def __init__(self, step: int, window_size: int, bin_setup: list, device="cpu", source_dtype="float32"):
-
+    def __init__(self, step: int, window_size: int, bin_setup: list, device="cpu", source_dtype="float32", sklearn=False):
+        self.sklearn = sklearn
         self.step = step
         self.window_size = window_size
         self.device = device
@@ -51,12 +53,11 @@ class SignalDataset(Dataset):
 
             self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'], dtype=dtype)[i_min: i_max])  # interval
 
-
     def _create_index_setup(self):
         for label, signal_list in self.loaded_signal.items():
             self.label_set.add(label)
             for sig_id, s in enumerate(signal_list):
-                for sample_id in range(0, len(s)-self.window_size, self.step):
+                for sample_id in range(0, len(s) - self.window_size, self.step):
                     self.indices.append((label, sig_id, sample_id))
 
         for i, label in enumerate(sorted(self.label_set)):
@@ -67,9 +68,9 @@ class SignalDataset(Dataset):
 
     def __getitem__(self, idx):
         label, sig_id, sample_id = self.indices[idx]
-        return torch.tensor(self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size]), torch.tensor(self.label_dict[label])
 
+        if self.sklearn is True:
+            return self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size], self.label_dict[label]
 
-
-
-
+        return torch.tensor(self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size]), torch.tensor(
+            self.label_dict[label])
