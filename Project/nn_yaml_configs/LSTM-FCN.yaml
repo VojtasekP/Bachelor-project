@@ -1,0 +1,53 @@
+model:
+  class: lstm_fnc
+  attention: False
+  kwargs:
+    layers:
+      lstm_config:
+        - name: LSTM
+          kwargs:
+            input_size: 1000
+            hidden_size: 401
+            num_layers: 2
+            batch_first: True
+            bidirectional: True
+      fcn_config:
+        - name: Conv1d
+          kwargs:
+            in_channels: 1
+            out_channels: 8
+            kernel_size: 100
+        - name: BatchNorm1d
+          kwargs:
+            num_features: 8
+        - name: Relu
+        - name: Conv1d
+          kwargs:
+            in_channels: 8
+            out_channels: 8
+            kernel_size: 100
+        - name: BatchNorm1d
+          kwargs:
+            num_features: 8
+        - name: Relu
+      output_config:
+        - name: Linear
+          kwargs:
+            in_features: 7218
+            out_features: 2000
+        - name: Linear
+          kwargs:
+            in_features: 2000
+            out_features: 9
+lr: 0.001
+
+training_params:
+  epoch_num: 10
+  dataloader_params:
+    batch_size: 256
+    shuffle: true
+
+eval_params:
+  batch_size: 256
+  shuffle: true
+

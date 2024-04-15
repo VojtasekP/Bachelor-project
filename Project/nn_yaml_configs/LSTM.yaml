@@ -3,7 +3,7 @@ lr: 0.01
 
 model:
   class: LSTM
-  attention: True
+  attention: False
   kwargs:
     layers:
       - name: LSTM

@@ -22,21 +22,23 @@ model:
           kernel_sizes: [11, 23, 41]
           bottleneck_channels: 32
           use_residual: True
-
+      - name: AdaptiveAvgPool1d
+        kwargs:
+          output_size: 1
+      - name: Flatten
+        kwargs:
+          start_dim: 1
+      - name: Linear
+        kwargs:
+          in_features: 128
+          out_features: 9
 training_params:
-  tensorboard:  # gives information when to load train loss
-    epoch: 0
-    batch: 1
-    batch_count: 128
-  epoch_num: 4
+  epoch_num: 10
   dataloader_params:
     batch_size: 256
     shuffle: true
 
 eval_params:
-  tensorboard:  # gives information when to load validation loss and evaluation metrics in to tensorboard
-    after: Epoch
-    batch_count: 128  # only relevant if tensorboard is set to write after batch
   batch_size: 256
   shuffle: true
 
