@@ -1,23 +1,31 @@
-from pathlib import Path
-
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-import yaml
-from icecream import ic
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-from torch.utils.data import random_split
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-import random
-from inceptionTime import Inception, InceptionBlock
-from signal_dataset import SignalDataset
 
-DEVICE = 'cuda'
-torch.manual_seed(22)
+from inceptionTime import Inception, InceptionBlock
+
+functions = {
+    # activation functions
+    "relu": nn.ReLU,
+    # layers
+    "identity": nn.Identity,
+    "conv1d": nn.Conv1d,
+    "linear": nn.Linear,
+    "lstm": nn.LSTM,
+    # inception
+    "inceptionblock": InceptionBlock,
+    "inception": Inception,
+    # others
+    "batchnorm1d": nn.BatchNorm1d,
+    "adaptiveavgpool1d": nn.AdaptiveAvgPool1d,
+    "flatten": nn.Flatten,
+    "unflatten": nn.Unflatten,
+    "dropout": nn.Dropout,
+}
+
+
+def create_layer(layer_name, **layer_kwargs):
+    return functions[layer_name.lower()](**layer_kwargs)
 
 
 class MLP(nn.Module):
@@ -98,26 +106,19 @@ class CNNOld(nn.Module):
 
 
 class InceptionTime(nn.Module):
-    def __init__(self, blocks_config: list[dict]):
+    def __init__(self, nn_config: list[dict]):
         super().__init__()
         self.layers = []
-        for layers_config_dict in blocks_config:
-            for i, layers_config in layers_config_dict.items():
-                for layer_config in layers_config:
-                    self.layers.append(
-                        eval(layer_config['name'])(*layer_config.get('args', []), **layer_config.get('kwargs', {})))
-        self.layers = nn.ModuleList(self.layers)
+        for layer_config in nn_config:
+            self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.layers = nn.Sequential(*self.layers)
         self.pool = nn.AdaptiveAvgPool1d(output_size=1)
 
         self.lin = nn.Linear(in_features=128, out_features=10)
 
     def forward(self, x):
         x = torch.reshape(input=x, shape=(-1, 1, 1000))
-        for layer in self.layers:
-            x = F.relu(layer(x))
-        x = self.pool(x)
-        x = torch.flatten(x, 1)
-        x = self.lin(x)
+        x = self.layers(x)
         return x
 
 
@@ -146,24 +147,52 @@ class AttentionRNN(nn.Module):
 
 
 class RNN(nn.Module):
-    def __init__(self, layers_config: list[dict], attention: False):
+    def __init__(self, nn_config: list[dict], attention: False):
         super().__init__()
         self.attention = attention
         self.layers = []
-        for layer in layers_config:
-            self.layers.append(
-                eval('nn.' + layer['name'])(*layer.get('args', []), **layer.get('kwargs', {})))
-        self.layers = nn.ModuleList(self.layers)
+        for layer_config in nn_config:
+            self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.layers = nn.Sequential(*self.layers)
         if attention:
             self.att = nn.Linear(512, 512)
 
     def forward(self, x):
         if self.attention:
             y = self.att(x)
-        x = torch.unsqueeze(x, 1)
-        for layer in self.layers[:-1]:
-            x, (h, c) = layer(input=x)
-        torch.flatten(x, 1)
-        x =
-        x = self.layers[-1](x)
+        # x = torch.unsqueeze(x, 1)
+        # for layer in self.layers[:-1]:
+        #     x, (h, c) = layer(input=x)
+        # torch.flatten(x, 1)
+        # x = self.layers[-1](x)
         return x
+
+
+class RnnFcn(nn.Module):
+    def __init__(self, nn_config: dict):
+        super().__init__()
+        self.lstm = []
+        self.fcn = []
+        self.output = []
+
+        for layer_config in nn_config["lstm_config"]:
+            self.lstm.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.lstm = nn.Sequential(*self.lstm)
+
+        for layer_config in nn_config["fcn_config"]:
+            self.fcn.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.fcn = nn.Sequential(*self.fcn)
+
+        for layer_config in nn_config["output_config"]:
+            self.output.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.output = nn.Sequential(*self.output)
+        self.dropout = nn.Dropout(0.5)
+    def forward(self, x):
+        x = torch.unsqueeze(x, 1)
+        lstm_output, _ = self.lstm(input=x)
+        lstm_output = self.dropout(lstm_output)
+        fcn_output = self.fcn(x)
+        concat_output = torch.cat((fcn_output, lstm_output), 1)
+        concat_output = torch.flatten(concat_output, 1)
+        output = self.output(concat_output)
+        return output
