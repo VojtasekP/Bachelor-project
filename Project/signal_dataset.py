@@ -69,8 +69,5 @@ class SignalDataset(Dataset):
     def __getitem__(self, idx):
         label, sig_id, sample_id = self.indices[idx]
 
-        if self.sklearn is True:
-            return self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size], self.label_dict[label]
+        return self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size], self.label_dict[label]
 
-        return torch.tensor(self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size]), torch.tensor(
-            self.label_dict[label])
