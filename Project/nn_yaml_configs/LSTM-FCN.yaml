@@ -1,7 +1,8 @@
 model:
-  class: lstm_fnc
+  type: lstm_fcn
   attention: False
   kwargs:
+    in_channels: 1
     layers:
       lstm_config:
         - name: LSTM
@@ -40,14 +41,19 @@ model:
             in_features: 2000
             out_features: 9
 lr: 0.001
+# number of batches you write down validation loss, confusion_matrix, etc.
+metrics:
+  validation_loss: 20
+  classification_report: 50
+  confusion_matrix: 200
 
 training_params:
-  epoch_num: 10
+  epoch_num: 1
   dataloader_params:
-    batch_size: 256
+    batch_size: 512
     shuffle: true
 
 eval_params:
   batch_size: 256
-  shuffle: true
+  shuffle: false
 

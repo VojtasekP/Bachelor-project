@@ -5,7 +5,7 @@ lr: 0.001
 bottleneck_channels: 32
 
 model:
-  class: Inception time
+  type : Inception time
   kwargs:
     layers:
       - name: InceptionBlock
@@ -32,6 +32,7 @@ model:
         kwargs:
           in_features: 128
           out_features: 9
+
 training_params:
   epoch_num: 10
   dataloader_params:

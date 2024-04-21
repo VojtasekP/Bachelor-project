@@ -1,17 +1,21 @@
 
 lr: 0.01
 model:
-  class: MLP
+  type: MLP
   kwargs:
-
-    layers_branch1:
-      - name: Linear
-        args: [ 1000, 2000 ]
-      - name: Linear
-        args: [ 2000, 500 ]
-      - name: Linear
-        args: [ 500, 9 ]
-    layers_branch2:
+    layers:
+        - name: Linear
+          kwargs:
+            in_features: 2000
+            out_features: 1000
+        - name: Linear
+          kwargs:
+            in_features: 1000
+            out_features: 100
+        - name: Linear
+          kwargs:
+            in_features: 100
+            out_features: 9
 
 training_params:
   epoch_num: 100
