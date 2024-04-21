@@ -19,8 +19,8 @@ from signal_dataset import SignalDataset
 DEVICE = torch.device('cuda')
 
 
-# torch.manual_seed(21)
-# TODO: SignalModel, Neuralnet/Skitlearn model inherit from SignalModel,train functioning same for all, predict
+torch.manual_seed(21)
+# TODO: SignalModel, Neuralnet/Sklearn model inherit from SignalModel,train functioning same for all, predict
 # compare with randomnumbergenerator model
 
 class SignalModel:
@@ -29,24 +29,23 @@ class SignalModel:
 
 class NeuroNet:
     def __init__(self, control_center: Path):
-
-        self._load_yaml(control_center)
+        self.control_center = control_center
+        self._load_yaml()
         self.model = self._build_model()
         self.model.to(DEVICE)
-
         self.pretrained = False
         self.criterion = nn.CrossEntropyLoss()
 
         self.writer = SummaryWriter(
-            comment=f"_{control_center.stem}_{self.model_config['eval_params']['batch_size']}")
+            comment=f"_{control_center.stem}_{self.config['eval_params']['batch_size']}")
         self.loss_avg = 0
         self.val_loss = []
         self.train_loss = []
         self.total_batch_id = 1
         self.epoch_trained = 0
 
-    def _load_yaml(self, control_center) -> None:
-        with control_center.open(mode="r") as yaml_file:
+    def _load_yaml(self) -> None:
+        with self.control_center.open(mode="r") as yaml_file:
             self.config = yaml.load(yaml_file, Loader=yaml.SafeLoader)
             self.model_config = self.config["model"]
 
@@ -61,8 +60,8 @@ class NeuroNet:
 
     def _build_model(self):
         # TODO: make in_channels as parameter
-        # TODO: eval (from networks import network type)
-        match self.model_config["class"]:
+        # TODO: eval
+        match self.model_config["type"]:
             case "MLP":
                 return networks.MLP(self.layers_configs)
             case "Inception time" | "Inception" | "Inception_time":
@@ -72,10 +71,10 @@ class NeuroNet:
                 return networks.RNN(self.layers_configs, attention=self.model_config["attention"])
             case "CNN":
                 return networks.CNNOld()
-            case "LSTM-FCN":
+            case "LSTM-FCN" | "lstm_fcn":
                 return networks.RnnFcn(self.layers_configs)
 
-    def train_model(self, training_data: Dataset, testing_data: Dataset):
+    def train_model(self, train_dataset: SignalDataset, test_dataset: SignalDataset):
 
         self._load_yaml()
 
@@ -83,33 +82,31 @@ class NeuroNet:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=self.config["training_params"][
                                                                    "epoch_num"])
-
-        train_dataloader = DataLoader(training_data,
+        train_dataloader = DataLoader(train_dataset,
                                       **self.config["training_params"].get("dataloader_params", {}))
-        test_dataloader = DataLoader(testing_data, **self.config["eval_params"])
+        test_dataloader = DataLoader(test_dataset, **self.config["eval_params"])
+
         epochs = trange(self.config["training_params"]["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
 
         for epoch in epochs:
-
+            torch.manual_seed(21)
             for (inputs, targets) in train_dataloader:
                 self.model.train()
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
-                # targets = F.one_hot(targets, num_classes = 9)
                 optimizer.zero_grad()
                 outputs = self.model(inputs)
-                # print(outputs)
-                # print(outputs.size())
                 loss = self.criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
                 self.train_loss.append(loss)
-                self.writer.add_scalar('Training Loss', loss, global_step=self.total_batch_id)
-                self.total_batch_id += 1
+                self.writer.add_scalar('Loss/train', loss, global_step=self.total_batch_id)
+
                 if self.total_batch_id % 50 == 0:
                     self.validation_loss(test_dataloader)
                     if self.total_batch_id % 200 == 0:
                         self.create_confusion_matrix(test_dataloader)
                 epochs.set_description(f"Epoch #{self.epoch_trained + 1}")
+                self.total_batch_id += 1
             last_lr = scheduler.get_last_lr()[0]
             self.writer.add_scalar('learning rate', last_lr, global_step=self.epoch_trained)
             self.epoch_trained += 1
@@ -124,45 +121,43 @@ class NeuroNet:
     #  TODO: acc on train_dataloader
 
     def create_confusion_matrix(self, test_dataloader: DataLoader):
-        # TODO
         self.model.eval()
-        y_pred = []  # save prediction
+        outputs_all = []  # save prediction
         y_true = []  # save ground truth
-        class_num = 9
-        cm = np.zeros((class_num, class_num))
+
 
         with torch.no_grad():
+            torch.manual_seed(21)
             for i, (inputs, targets) in enumerate(test_dataloader):
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = self.model(inputs)
-
-                # CONFUSION MATRIX
-                predictions = torch.argmax(outputs, dim=1).cpu().numpy()
-                y_pred.extend(predictions)  # save prediction
-                targets = targets.data.cpu().numpy()
-                y_true.extend(targets)
-
+                outputs_all.extend(outputs.cpu().numpy())  # save prediction
+                y_true.extend(targets.data.cpu().numpy())
+            class_num = 9
+            y_pred = np.argmax(np.asarray(outputs_all), axis=1)
             cm = confusion_matrix(y_true, y_pred, labels=np.arange(class_num))
             df_cm = pd.DataFrame(cm / np.sum(cm, axis=1)[:, None], index=[i for i in range(class_num)],
                                  columns=[i for i in range(class_num)])
             plt.figure(figsize=(12, 7))
             accuracy = accuracy_score(y_true, y_pred)
-            self.writer.add_figure(tag="Confusion matrix",
+            self.writer.add_figure(tag="Confusion matrix/val",
                                    figure=sns.heatmap(df_cm, annot=True, fmt=".1f").get_figure(),
                                    global_step=self.total_batch_id)
-            self.writer.add_scalar('Accuracy', accuracy, global_step=self.total_batch_id)
+            self.writer.add_scalar('Accuracy/val', accuracy, global_step=self.total_batch_id)
 
         # # torch.optim.lr_scheduler.print_lr()
 
     def validation_loss(self, test_dataloader: DataLoader):
+        val_loss = []
+        self.model.eval()
         with torch.no_grad():
             for i, (inputs, targets) in enumerate(test_dataloader):
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
-                self.val_loss.append(loss)
-        self.loss_avg = sum(self.val_loss) / len(self.val_loss)
-        self.writer.add_scalar('validation loss', self.loss_avg, global_step=self.total_batch_id)
+                val_loss.append(loss)
+        loss_avg = sum(val_loss) / len(val_loss)
+        self.writer.add_scalar('Loss/val', loss_avg, global_step=self.total_batch_id)
 
     def classification_report(self, testing_data: Dataset):
 
@@ -217,7 +212,7 @@ def main():
 
     sd = SignalDataset(step=1000, window_size=1000, bin_setup=bin_setup, device="cpu", source_dtype="float32")
 
-    train_data, test_data = random_split(sd, [0.8, 0.2])
+    train_data, test_data = random_split(sd, [0.8, 0.2], generator=torch.Generator().manual_seed(21))
     # print(train_data[0])
     neuro_net = NeuroNet(Path('nn_yaml_configs/LSTM-FCN.yaml'))
 
