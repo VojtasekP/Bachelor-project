@@ -29,15 +29,13 @@ def create_layer(layer_name, **layer_kwargs):
 
 
 class MLP(nn.Module):
-    def __init__(self, layers_config_list: list[dict]):
+    def __init__(self, nn_config: list[dict]):
         super().__init__()
         self.layers = []
-        for layers_config_dict in layers_config_list:
-            for i, layers_config in layers_config_dict.items():
-                for layer_config in layers_config:
-                    self.layers.append(
-                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []),
-                                                           **layer_config.get('kwargs', {})))
+
+        for layer_config in nn_config:
+            self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.layers = nn.Sequential(*self.layers)
         self.layers = nn.ModuleList(self.layers)
 
     def forward(self, x):
@@ -53,12 +51,9 @@ class CNN(nn.Module):
 
         self.layers = []
 
-        for layers_config_dict in blocks_config:
-            for i, layers_config in layers_config_dict.items():
-                for layer_config in layers_config:
-                    self.layers.append(
-                        eval('nn.' + layer_config['name'])(*layer_config.get('args', []),
-                                                           **layer_config.get('kwargs', {})))
+        for layer_config in nn_config:
+            self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.layers = nn.Sequential(*self.layers)
         self.layers = nn.ModuleList(self.layers)
 
         # self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2)
