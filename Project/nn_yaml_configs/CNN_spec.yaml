@@ -1,0 +1,76 @@
+
+model:
+  type: CNN
+  kwargs:
+    layers:
+      - name: Conv2d
+        kwargs:
+          in_channels: 1
+          out_channels: 64
+          kernel_size: 5
+          stride: 4
+          padding: 2
+      - name: Relu
+      - name: BatchNorm2d
+        kwargs:
+          num_features: 64
+      - name: Conv2d
+        kwargs:
+          in_channels: 64
+          out_channels: 192
+          kernel_size: 5
+          padding: 2
+      - name: Relu
+      - name: Relu
+      - name: BatchNorm2d
+        kwargs:
+          num_features: 192
+      - name: Conv2d
+        kwargs:
+          in_channels: 192
+          out_channels: 256
+          kernel_size: 3
+          padding: 1
+      - name: Relu
+      - name: BatchNorm2d
+        kwargs:
+          num_features: 256
+      - name: adaptiveavgpool2d
+        kwargs:
+          output_size: 6
+      - name: Flatten
+        kwargs:
+          start_dim: 1
+      - name: Dropout
+      - name: Linear
+        kwargs:
+          in_features: 9216
+          out_features: 4096
+      - name: Relu
+      - name: Dropout
+      - name: Linear
+        kwargs:
+          in_features: 4096
+          out_features: 2048
+      - name: Relu
+      - name: Linear
+        kwargs:
+          in_features: 2048
+          out_features: 9
+
+tensorboard_params:
+  validation_loss: 256
+  accuracy: 256
+  confusion_matrix: 256
+
+lr: 0.001
+
+training_params:
+  epoch_num: 2
+  dataloader_params:
+    batch_size: 256
+    shuffle: true
+
+eval_params:
+  batch_size: 256
+  shuffle: true

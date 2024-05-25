@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torchaudio.transforms as T
 from inceptionTime import Inception, InceptionBlock
 
 functions = {
     # activation functions
     "relu": nn.ReLU,
+    "sigmoid": nn.Sigmoid,
     # layers
     "identity": nn.Identity,
     "conv1d": nn.Conv1d,
+    "conv2d": nn.Conv2d,
     "linear": nn.Linear,
     "lstm": nn.LSTM,
     # inception
@@ -17,10 +19,16 @@ functions = {
     "inception": Inception,
     # others
     "batchnorm1d": nn.BatchNorm1d,
+    "batchnorm2d": nn.BatchNorm2d,
     "adaptiveavgpool1d": nn.AdaptiveAvgPool1d,
+    "adaptiveavgpool2d": nn.AdaptiveAvgPool2d,
+    "avgpool1d": nn.AvgPool1d,
+    "maxpool1d": nn.MaxPool1d,
+    "maxpool2d": nn.MaxPool2d,
     "flatten": nn.Flatten,
     "unflatten": nn.Unflatten,
     "dropout": nn.Dropout,
+    "spectrogram": T.Spectrogram,
 }
 
 
@@ -32,21 +40,17 @@ class MLP(nn.Module):
     def __init__(self, nn_config: list[dict]):
         super().__init__()
         self.layers = []
-
         for layer_config in nn_config:
             self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
         self.layers = nn.Sequential(*self.layers)
-        self.layers = nn.ModuleList(self.layers)
 
     def forward(self, x):
-        for layer in self.layers[:-1]:
-            x = F.relu(layer(x))
-        x = self.layers[-1](x)
+        x = self.layers(x)
         return x
 
 
 class CNN(nn.Module):
-    def __init__(self, blocks_config: list[dict]):
+    def __init__(self, nn_config: list[dict]):
         super().__init__()
 
         self.layers = []
@@ -54,23 +58,10 @@ class CNN(nn.Module):
         for layer_config in nn_config:
             self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
         self.layers = nn.Sequential(*self.layers)
-        self.layers = nn.ModuleList(self.layers)
-
-        # self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2)
 
     def forward(self, x):
-        # print(x.shape)
-        # x = torch.unsqueeze(x, 1)
-        x = x.view(-1, 1, 1000)
-        # for layer in self.conv_layers:
-        #     x = F.relu(layer(x))
-        # x = torch.flatten(x, 1)
-        for layer in self.layers[:-1]:
-            if isinstance(layer, nn.AdaptiveAvgPool1d) or isinstance(layer, nn.Flatten):
-                x = layer(x)
-            else:
-                x = F.relu(layer(x))
-        x = self.layers[-1](x)
+
+        x = self.layers(x)
 
         return x
 
@@ -103,16 +94,13 @@ class CNNOld(nn.Module):
 class InceptionTime(nn.Module):
     def __init__(self, nn_config: list[dict]):
         super().__init__()
+
         self.layers = []
         for layer_config in nn_config:
             self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
         self.layers = nn.Sequential(*self.layers)
-        self.pool = nn.AdaptiveAvgPool1d(output_size=1)
-
-        self.lin = nn.Linear(in_features=128, out_features=10)
 
     def forward(self, x):
-        x = torch.reshape(input=x, shape=(-1, 1, 1000))
         x = self.layers(x)
         return x
 
@@ -128,8 +116,7 @@ class AttentionRNN(nn.Module):
         self.linear = nn.Linear(512, 9)
 
     def forward(self, x):
-        out = torch.unsqueeze(x, 1)
-        out, (h0, c0) = self.rnn(out)
+        out, (h0, c0) = self.rnn(x)
         # out = self.bn(out)
         # out = torch.permute(out, (0, 2, 1))
         # out = F.relu(self.conv(x))
@@ -142,24 +129,25 @@ class AttentionRNN(nn.Module):
 
 
 class RNN(nn.Module):
-    def __init__(self, nn_config: list[dict], attention: False):
+    def __init__(self, nn_config: dict, attention: False):
         super().__init__()
         self.attention = attention
-        self.layers = []
-        for layer_config in nn_config:
-            self.layers.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
-        self.layers = nn.Sequential(*self.layers)
-        if attention:
-            self.att = nn.Linear(512, 512)
+        self.lstm = []
+        self.output = []
+        for layer_config in nn_config["lstm_config"]:
+            self.lstm.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.lstm = nn.Sequential(*self.lstm)
+
+        for layer_config in nn_config["output_config"]:
+            self.output.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
+        self.output = nn.Sequential(*self.output)
 
     def forward(self, x):
         if self.attention:
             y = self.att(x)
-        # x = torch.unsqueeze(x, 1)
-        # for layer in self.layers[:-1]:
-        #     x, (h, c) = layer(input=x)
-        # torch.flatten(x, 1)
-        # x = self.layers[-1](x)
+        lstm_out, (h0, c0) = self.lstm(x)
+        x = self.layers(x)
+        x = torch.flatten(x, 1)
         return x
 
 
@@ -169,7 +157,6 @@ class RnnFcn(nn.Module):
         self.lstm = []
         self.fcn = []
         self.output = []
-
         for layer_config in nn_config["lstm_config"]:
             self.lstm.append(create_layer(layer_config["name"], **layer_config.get("kwargs", {})))
         self.lstm = nn.Sequential(*self.lstm)
@@ -183,11 +170,13 @@ class RnnFcn(nn.Module):
         self.output = nn.Sequential(*self.output)
         self.dropout = nn.Dropout(0.5)
     def forward(self, x):
-        x = torch.unsqueeze(x, 1)
         lstm_output, _ = self.lstm(input=x)
-        lstm_output = self.dropout(lstm_output)
+
         fcn_output = self.fcn(x)
+
+        lstm_output = torch.flatten(lstm_output, start_dim=1)
+        fcn_output = torch.flatten(fcn_output, start_dim=1)
         concat_output = torch.cat((fcn_output, lstm_output), 1)
-        concat_output = torch.flatten(concat_output, 1)
+
         output = self.output(concat_output)
         return output
