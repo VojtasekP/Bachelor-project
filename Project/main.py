@@ -87,7 +87,7 @@ class NeuroNet:
         test_dataloader = DataLoader(test_dataset, **self.config["eval_params"])
 
         epochs = trange(self.config["training_params"]["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
-
+        running_loss = 0
         for epoch in epochs:
             torch.manual_seed(21)
             for (inputs, targets) in train_dataloader:
@@ -98,7 +98,8 @@ class NeuroNet:
                 loss = self.criterion(outputs, targets)
                 loss.backward()
                 optimizer.step()
-                self.train_loss.append(loss)
+                running_loss += loss.item()
+                self.train_loss.append(loss.item())
                 self.writer.add_scalar('Loss/train', loss, global_step=self.total_batch_id)
 
                 if self.total_batch_id % 50 == 0:
