@@ -1,29 +1,38 @@
 
-lr: 0.01
+lr: 0.001
 model:
   type: MLP
   kwargs:
     layers:
         - name: Linear
           kwargs:
-            in_features: 2000
-            out_features: 1000
-        - name: Linear
-          kwargs:
             in_features: 1000
-            out_features: 100
+            out_features: 2000
+        - name: Relu
         - name: Linear
           kwargs:
-            in_features: 100
+            in_features: 2000
+            out_features: 500
+        - name: Relu
+        - name: Linear
+          kwargs:
+            in_features: 500
             out_features: 9
+        - name: Flatten
+
+tensorboard_params:
+  validation_loss: 256
+  accuracy: 256
+  confusion_matrix: 256
 
 training_params:
-  epoch_num: 100
+  epoch_num: 20
+
   dataloader_params:
-    batch_size: 500
+    batch_size: 256
     shuffle: true
 
 eval_params:
-  batch_size: 500
-  shuffle: true
+  batch_size: 256
+  shuffle: false
 

@@ -34,7 +34,7 @@ model:
           out_features: 9
 
 training_params:
-  epoch_num: 10
+  epoch_num: 1
   dataloader_params:
     batch_size: 256
     shuffle: true
@@ -42,6 +42,12 @@ training_params:
 eval_params:
   batch_size: 256
   shuffle: true
+
+# TODO: RENAME
+tensorboard_params:
+  validation_loss: 256
+  classification_report: 256
+  confusion_matrix: 256
 
 bottleneck:
   - name: Conv1d

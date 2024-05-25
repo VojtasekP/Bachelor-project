@@ -1,11 +1,11 @@
 
-lr: 0.01
+lr: 0.001
 
 model:
-  class: LSTM
+  type: LSTM
   attention: False
   kwargs:
-    layers:
+    lstm_config:
       - name: LSTM
         kwargs:
           input_size: 1000
@@ -13,11 +13,16 @@ model:
           num_layers: 2
           batch_first: True
           bidirectional: True
+    output_config:
       - name: Linear
         kwargs:
           in_features: 1024
           out_features: 9
 
+tensorboard_params:
+  validation_loss: 50
+  classification_report: 100
+  confusion_matrix: 200
 
 
 training_params:
@@ -28,5 +33,5 @@ training_params:
 
 eval_params:
   batch_size: 256
-  shuffle: true
+  shuffle: false
 
