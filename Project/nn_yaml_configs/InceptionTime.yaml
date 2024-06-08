@@ -31,10 +31,10 @@ model:
       - name: Linear
         kwargs:
           in_features: 128
-          out_features: 9
+          out_features: 6
 
 training_params:
-  epoch_num: 1
+  epoch_num: 5
   dataloader_params:
     batch_size: 256
     shuffle: true
@@ -43,10 +43,10 @@ eval_params:
   batch_size: 256
   shuffle: true
 
-# TODO: RENAME
+# TODO: RENAME USE GPT
 tensorboard_params:
   validation_loss: 256
-  classification_report: 256
+  accuracy: 256
   confusion_matrix: 256
 
 bottleneck:

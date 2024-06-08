@@ -1,5 +1,4 @@
 
-lr: 0.0001
 
 
 model:
@@ -11,6 +10,9 @@ model:
           in_channels: 1
           out_channels: 8
           kernel_size: 100
+      - name: BatchNorm1d
+        kwargs:
+          num_features: 8
       - name: Relu
       - name: Conv1d
         kwargs:
@@ -23,20 +25,31 @@ model:
           num_features: 16
       - name: AdaptiveAvgPool1d
         kwargs:
-          output_size: 1000
+          output_size: 100
       - name: Flatten
         kwargs:
           start_dim: 1
 
       - name: Linear
         kwargs:
-          in_features: 1000
+          in_features: 1600
+          out_features: 500
+      - name: Relu
+      - name: Linear
+        kwargs:
+          in_features: 500
           out_features: 9
 
 
+lr: 0.001
+
+tensorboard_params:
+  validation_loss: 256
+  accuracy: 256
+  confusion_matrix: 256
 
 training_params:
-  epoch_num: 10
+  epoch_num: 15
   dataloader_params:
     batch_size: 256
     shuffle: true
