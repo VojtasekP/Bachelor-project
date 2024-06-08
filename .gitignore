@@ -154,4 +154,5 @@ Project/signal_network.ipynb
 Project/testing_yaml.py
 Project/my_snapshot.pickle
 Project/testing.py
-
+Project/hyperparameter_tuning.ipynb
+Project/visualization_and_cv.ipynb
