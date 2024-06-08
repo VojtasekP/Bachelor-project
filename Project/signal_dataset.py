@@ -48,12 +48,16 @@ class SignalDataset(Dataset):
     def _load_signals(self):
         for bin_config in self.bin_setup:
             label = bin_config['label']
-            i_min, i_max = bin_config['interval']
+
             if label not in self.loaded_signal:
                 self.loaded_signal[label] = []
-
-            self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'],
-                                                         dtype=self.source_dtype)[i_min: i_max])  # interval
+            if bin_config["interval"] is not None:
+                i_min, i_max = bin_config['interval']
+                self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'],
+                                                             dtype=self.source_dtype)[i_min: i_max])  # interval
+            else:
+                self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'],
+                                                             dtype=self.source_dtype))  # interval
 
     def _create_index_setup(self):
         for label, signal_list in self.loaded_signal.items():
