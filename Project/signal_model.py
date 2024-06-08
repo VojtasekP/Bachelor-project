@@ -23,7 +23,7 @@ from tqdm import trange
 
 import networks
 from signal_dataset import SignalDataset
-
+import tsaug
 DEVICE = "cuda"
 
 
@@ -61,8 +61,8 @@ class SignalModel:
     def init_transform(self) -> Callable:
 
         def transform(x):
-            # return tsaug.AddNoise(scale=0.1).augment(x)
-            return T.Spectrogram(n_fft=1024)(x)
+            return torch.from_numpy(tsaug.AddNoise(scale=0.1).augment(x.numpy()))
+            # return T.Spectrogram(n_fft=1024)(x)
 
         return transform
 
@@ -186,7 +186,6 @@ class NeuroNet(SignalModel, ABC):
             for i, (inputs, targets) in enumerate(train_dataloader):
                 self._model.train()
                 inputs = self._transform(inputs)
-                print(inputs.shape)
                 # inputs = torch.from_numpy(self._transform(inputs.numpy()))
                 inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
                 optimizer.zero_grad()
@@ -236,7 +235,6 @@ class NeuroNet(SignalModel, ABC):
             #
             # self.eval_model(testing_data, writer, )
 
-            self.writer.close()
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         self._model.eval()
@@ -309,6 +307,7 @@ class NeuroNet(SignalModel, ABC):
     def save(self, path: str) -> None:
         torch.save(self._model, Path(path))
 
+    # TODO: can you reopen closed summary writer?
     def close_writer(self):
         self.writer.close()
         print("Tensorboard summary writer is closed")
