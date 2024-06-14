@@ -1,11 +1,14 @@
 
 model:
-  type: CNN
+  type: CNN_spec
   kwargs:
     layers:
+      # spectrogram
       - name: spectrogram
         kwargs:
           n_fft: 200
+
+      # first conv block
       - name: Conv2d
         kwargs:
           in_channels: 1
@@ -13,67 +16,112 @@ model:
           kernel_size: 5
           stride: 4
           padding: 2
+        id: conv1
+
       - name: Relu
+
       - name: BatchNorm2d
         kwargs:
           num_features: 64
+        id: bn1
 
+      # second conv block
       - name: Conv2d
         kwargs:
           in_channels: 64
           out_channels: 192
           kernel_size: 5
           padding: 2
+        id: conv2
+
       - name: Relu
+
       - name: BatchNorm2d
         kwargs:
           num_features: 192
+        id: bn2
 
+      # third conv block
       - name: Conv2d
         kwargs:
           in_channels: 192
           out_channels: 256
           kernel_size: 3
           padding: 1
+        id: conv3
+
       - name: Relu
+
       - name: BatchNorm2d
         kwargs:
           num_features: 256
+        id: bn3
+
+      # forth conv block
+      - name: Conv2d
+        kwargs:
+          in_channels: 256
+          out_channels: 512
+          kernel_size: 3
+          padding: 1
+        id: conv4
+
+      - name: Relu
+
+      - name: BatchNorm2d
+        kwargs:
+          num_features: 256
+        id: bn4
 
       - name: adaptiveavgpool2d
         kwargs:
           output_size: 6
+        id: adaptpool
 
       - name: Flatten
         kwargs:
           start_dim: 1
+
       - name: Dropout
+        kwargs:
+          p: 0.5
+        id: dropout1
 
       - name: Linear
         kwargs:
           in_features: 9216
           out_features: 4096
+        id: linear1
       - name: Relu
+
       - name: Dropout
+        kwargs:
+          p: 0.5
+        id: dropout2
+
       - name: Linear
         kwargs:
           in_features: 4096
           out_features: 2048
+        id: linear2
       - name: Relu
+
       - name: Linear
         kwargs:
           in_features: 2048
           out_features: 6
+        id: linear3
 
-tensorboard_params:
-  validation_loss: 256
-  accuracy: 256
-  confusion_matrix: 256
+tensorboard_log_frequency:
+  validation_loss: 128
+  accuracy: 128
+  confusion_matrix: 128
 
-lr: 0.001
+
 
 training_params:
-  epoch_num: 40
+  lr: 0.0001
+  epoch_num: 2
   dataloader_params:
     batch_size: 256
 

@@ -1,37 +1,49 @@
 
-lr: 0.001
+
 
 model:
   type: LSTM
-  attention: False
   kwargs:
-    lstm_config:
-      - name: LSTM
-        kwargs:
-          input_size: 1000
-          hidden_size: 512
-          num_layers: 2
-          batch_first: True
-          bidirectional: True
-    output_config:
-      - name: Linear
-        kwargs:
-          in_features: 1024
-          out_features: 9
+    layers:
+      lstm_config:
+        - name: LSTM
+          kwargs:
+            input_size: 1000
+            hidden_size: 512
+            num_layers: 2
+            batch_first: True
+            bidirectional: True
+          id: lstm
+      output_config:
+        - name: Linear
+          kwargs:
+            in_features: 1024
+            out_features: 512
+          id: linear1
+        - name: dropout
+          kwargs:
+            p: 0.5
+          id: dropout
+        - name: relu
+        - name: Linear
+          kwargs:
+            in_features: 512
+            out_features: 6
+          id: linear2
 
-tensorboard_params:
-  validation_loss: 50
-  classification_report: 100
-  confusion_matrix: 200
+tensorboard_log_frequency:
+  validation_loss: 256
+  accuracy: 256
+  confusion_matrix: 256
+
 
 
 training_params:
+  lr: 0.01
   epoch_num: 20
   dataloader_params:
     batch_size: 256
-    shuffle: true
 
 eval_params:
   batch_size: 256
-  shuffle: false
 

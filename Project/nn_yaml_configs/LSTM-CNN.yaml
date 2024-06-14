@@ -8,64 +8,70 @@ model:
         - name: LSTM
           kwargs:
             input_size: 1000
-            hidden_size: 1600
+            hidden_size: 256
             num_layers: 2
             batch_first: True
             bidirectional: True
-            dropout: 0.5
+          id:
       fcn_config:
         - name: Conv1d
           kwargs:
             in_channels: 1
-            out_channels: 16
-            kernel_size: 100
+            out_channels: 8
+            kernel_size: 15
         - name: BatchNorm1d
           kwargs:
-            num_features: 16
+            num_features: 8
         - name: Relu
         - name: Conv1d
           kwargs:
-            in_channels: 16
-            out_channels: 32
-            kernel_size: 100
+            in_channels: 8
+            out_channels: 8
+            kernel_size: 31
         - name: BatchNorm1d
           kwargs:
-            num_features: 32
+            num_features: 8
+        - name: Relu
         - name: AvgPool1d
           kwargs:
-            kernel_size: 8
-        - name: Relu
+            kernel_size: 12
+
       output_config:
         - name: Linear
           kwargs:
-            in_features: 6400
-            out_features: 2500
+            in_features: 1144
+            out_features: 512
         - name: Dropout
           kwargs:
             p: 0.5
+        - name: relu
         - name: Linear
           kwargs:
-            in_features: 2500
-            out_features: 100
-        - name: Linear
-          kwargs:
-            in_features: 100
-            out_features: 9
+            in_features: 512
+            out_features: 6
 
-lr: 0.000003
+
+classes:
+  0: Inadequate Lubrication
+  1: Corrosion Damage
+  2: Exceeding Life
+  3: Contaminated Lubricant
+  4: Overload Stress
+  5: New
+
 # number of batches you write down validation loss, confusion_matrix, etc.
-tensorboard_params:
-  validation_loss: 512
-  accuracy: 1024
-  confusion_matrix: 1024
+tensorboard_log_frequency:
+  validation_loss: 128
+  accuracy: 128
+  confusion_matrix: 128
 
 training_params:
-  epoch_num: 10
+  lr: 0.001
+  epoch_num: 20
+  warmups: 3
   dataloader_params:
-    batch_size: 1024
-    shuffle: true
+    batch_size: 256
 
 eval_params:
-  batch_size: 512
-  shuffle: false
+  batch_size: 256
 

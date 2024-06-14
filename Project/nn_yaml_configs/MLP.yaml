@@ -1,5 +1,5 @@
 
-lr: 0.001
+
 model:
   type: MLP
   kwargs:
@@ -8,26 +8,29 @@ model:
           kwargs:
             in_features: 1000
             out_features: 2000
+          id: linear1
         - name: Relu
         - name: Linear
           kwargs:
             in_features: 2000
             out_features: 500
+          id: linear2
         - name: Relu
         - name: Linear
           kwargs:
             in_features: 500
             out_features: 6
+          id: linear3
         - name: Flatten
 
-tensorboard_params:
+tensorboard_log_frequency:
   validation_loss: 256
   accuracy: 256
   confusion_matrix: 256
 
 training_params:
+  lr: 0.001
   epoch_num: 5
-
   dataloader_params:
     batch_size: 256
 

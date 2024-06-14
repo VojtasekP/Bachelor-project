@@ -43,7 +43,7 @@ model:
 
 lr: 0.001
 
-tensorboard_params:
+tensorboard_log_frequency:
   validation_loss: 256
   accuracy: 256
   confusion_matrix: 256
