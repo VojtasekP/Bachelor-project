@@ -103,9 +103,8 @@ class AttentionRNN(nn.Module):
 
 
 class RNN(nn.Module):
-    def __init__(self, nn_config: dict, attention: False):
+    def __init__(self, nn_config: dict):
         super().__init__()
-        self.attention = attention
         self.lstm = []
         self.output = []
         for layer_config in nn_config["lstm_config"]:
@@ -117,12 +116,10 @@ class RNN(nn.Module):
         self.output = nn.Sequential(*self.output)
 
     def forward(self, x):
-        if self.attention:
-            y = self.att(x)
         lstm_out, (h0, c0) = self.lstm(x)
-        x = self.layers(x)
-        x = torch.flatten(x, 1)
-        return x
+        output = self.output(lstm_out)
+        output = torch.flatten(output, 1)
+        return output
 
 
 class RnnFcn(nn.Module):
