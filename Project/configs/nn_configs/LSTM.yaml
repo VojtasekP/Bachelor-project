@@ -40,7 +40,7 @@ tensorboard_log_frequency:
 
 training_params:
   lr: 0.0005
-  epoch_num: 4
+  epoch_num: 20
   warmups: 1
   dataloader_params:
     batch_size: 64

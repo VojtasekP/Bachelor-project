@@ -1,0 +1,27 @@
+model:
+  type: EfficientNet
+  kwargs:
+    layers: [2, 2, 2, 2]
+    num_classes: 6
+    groups: 1
+    width_per_group: 64
+    block:
+
+
+tensorboard_log_frequency:
+  validation_loss: 128
+  accuracy: 128
+  confusion_matrix: 128
+
+
+
+training_params:
+  lr: 0.01
+  epoch_num: 20
+  warmups: 1
+  dataloader_params:
+    batch_size: 64
+
+
+eval_params:
+  batch_size: 128
