@@ -6,111 +6,101 @@ model:
       # spectrogram
       - name: spectrogram
         kwargs:
-          n_fft: 200
+          n_fft: 512
+        id: spectrogram
 
       # first conv block
       - name: Conv2d
         kwargs:
           in_channels: 1
-          out_channels: 64
-          kernel_size: 5
-          stride: 4
+          out_channels: 16
+          kernel_size: 15
           padding: 2
+          bias: True
         id: conv1
 
       - name: Relu
 
       - name: BatchNorm2d
         kwargs:
-          num_features: 64
+          num_features: 16
         id: bn1
 
       # second conv block
       - name: Conv2d
         kwargs:
-          in_channels: 64
-          out_channels: 192
-          kernel_size: 5
-          padding: 2
+          in_channels: 16
+          out_channels: 32
+          kernel_size: 3
+          padding: 1
+          bias: True
         id: conv2
 
       - name: Relu
 
       - name: BatchNorm2d
         kwargs:
-          num_features: 192
+          num_features: 32
         id: bn2
 
       # third conv block
       - name: Conv2d
         kwargs:
-          in_channels: 192
-          out_channels: 256
+          in_channels: 32
+          out_channels: 32
           kernel_size: 3
           padding: 1
+          bias: True
         id: conv3
 
       - name: Relu
 
       - name: BatchNorm2d
         kwargs:
-          num_features: 256
+          num_features: 32
         id: bn3
 
       # forth conv block
       - name: Conv2d
         kwargs:
-          in_channels: 256
-          out_channels: 512
-          kernel_size: 3
-          padding: 1
+          in_channels: 32
+          out_channels: 64
+          kernel_size: 5
+          padding: 2
+          bias: True
         id: conv4
 
       - name: Relu
 
       - name: BatchNorm2d
         kwargs:
-          num_features: 256
+          num_features: 64
         id: bn4
 
       - name: adaptiveavgpool2d
         kwargs:
           output_size: 6
-        id: adaptpool
+        id: adaptivepool
 
       - name: Flatten
         kwargs:
           start_dim: 1
 
-      - name: Dropout
-        kwargs:
-          p: 0.5
-        id: dropout1
+
 
       - name: Linear
         kwargs:
-          in_features: 9216
-          out_features: 4096
+          in_features: 2304
+          out_features: 1000
         id: linear1
       - name: Relu
 
-      - name: Dropout
-        kwargs:
-          p: 0.5
-        id: dropout2
-
       - name: Linear
         kwargs:
-          in_features: 4096
-          out_features: 2048
-        id: linear2
-      - name: Relu
-
-      - name: Linear
-        kwargs:
-          in_features: 2048
+          in_features: 1000
           out_features: 6
-        id: linear3
+        id: linear2
+
 
 tensorboard_log_frequency:
   validation_loss: 128
@@ -120,11 +110,12 @@ tensorboard_log_frequency:
 
 
 training_params:
-  lr: 0.0001
-  epoch_num: 2
+  lr: 0.01
+  epoch_num: 20
+  warmups: 1
   dataloader_params:
-    batch_size: 256
+    batch_size: 64
 
 
 eval_params:
-  batch_size: 256
+  batch_size: 32

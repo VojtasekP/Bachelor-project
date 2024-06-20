@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio.transforms as T
+from torchvision.ops import Conv2dNormActivation
+
 from inceptionTime import Inception, InceptionBlock
+from torchvision import models
 
 functions = {
     # activation functions
@@ -144,10 +147,42 @@ class RnnFcn(nn.Module):
         lstm_output, _ = self.lstm(input=x)
 
         fcn_output = self.fcn(x)
-
         lstm_output = torch.flatten(lstm_output, start_dim=1)
+        print(lstm_output.shape)
         fcn_output = torch.flatten(fcn_output, start_dim=1)
+        print(fcn_output.shape)
         concat_output = torch.cat((fcn_output, lstm_output), 1)
-
+        print(concat_output.shape)
         output = self.output(concat_output)
         return output
+
+class ResNet(nn.Module):
+    def __init__(self, num_classes=1):
+        super().__init__()
+        self.model = models.resnet50()
+        self.model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.model.fc = nn.Linear(2048, 6)
+        self. transform = T.Spectrogram(n_fft=512, hop_length=256)
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x):
+        x = self.transform(x)
+        x = self.model(x)
+        return x
+
+class EfficientNet(nn.Module):
+    def __init__(self, num_classes=1):
+        super().__init__()
+        self.model = models.efficientnet_b3()
+        self.model.features[0] = Conv2dNormActivation(
+                1, 40, kernel_size=3, stride=2, norm_layer=nn.BatchNorm2d, activation_layer=nn.SiLU)
+        self.model.classifier = nn.Sequential(
+            nn.Dropout(p=0.4, inplace=True),
+            nn.Linear(1536, num_classes),
+        )
+        self.transform = T.Spectrogram(n_fft=512, hop_length=256)
+
+    def forward(self, x):
+        x = self.transform(x)
+        x = self.model(x)
+        return x

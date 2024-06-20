@@ -8,29 +8,33 @@ model:
         - name: LSTM
           kwargs:
             input_size: 1000
-            hidden_size: 256
+            hidden_size: 512
             num_layers: 2
             batch_first: True
             bidirectional: True
-          id:
+          id: lstm
       fcn_config:
         - name: Conv1d
           kwargs:
             in_channels: 1
             out_channels: 8
             kernel_size: 15
+          id: conv1
         - name: BatchNorm1d
           kwargs:
             num_features: 8
+          id: bn
         - name: Relu
         - name: Conv1d
           kwargs:
             in_channels: 8
             out_channels: 8
             kernel_size: 31
+          id: conv2
         - name: BatchNorm1d
           kwargs:
             num_features: 8
+          id: bn2
         - name: Relu
         - name: AvgPool1d
           kwargs:
@@ -39,16 +43,18 @@ model:
       output_config:
         - name: Linear
           kwargs:
-            in_features: 1144
+            in_features: 1656
             out_features: 512
+          id: linear1
         - name: Dropout
           kwargs:
-            p: 0.5
+            p: 0.2
         - name: relu
         - name: Linear
           kwargs:
             in_features: 512
             out_features: 6
+
 
 
 classes:
@@ -66,12 +72,12 @@ tensorboard_log_frequency:
   confusion_matrix: 128
 
 training_params:
-  lr: 0.001
+  lr: 0.0024
   epoch_num: 20
-  warmups: 3
+  warmups: 1
   dataloader_params:
-    batch_size: 256
+    batch_size: 64
 
 eval_params:
-  batch_size: 256
+  batch_size: 64
 

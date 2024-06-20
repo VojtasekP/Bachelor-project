@@ -1,7 +1,7 @@
 import numpy as np
 # import matplotlib.pyplot as plt
 # from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 # from torch.utils.data import random_split
 import torch
@@ -21,7 +21,7 @@ DEVICE = 'cuda'
 
 class SignalDataset(Dataset):
 
-    def __init__(self, step: int, window_size: int, bin_setup: list,
+    def __init__(self, step: int, window_size: int, bin_setup: list, noise: dict = None,
                  device="cpu", source_dtype="float32"):
 
         self.step = step
@@ -31,7 +31,7 @@ class SignalDataset(Dataset):
         self.bin_setup = bin_setup
 
         self.loaded_signal = {}
-
+        self.noise = noise
         self.sampling = []
         self.num_of_samples = []
 
@@ -43,7 +43,13 @@ class SignalDataset(Dataset):
         self.label_dict = {}
 
         self._load_signals()  # loads raw data in form of numpy arrray in to a list
+
+        if self.noise is not None:
+
+            self._load_noise()
+
         self._create_index_setup()  # creates indices of starts of intervals
+
 
     def _load_signals(self):
         for bin_config in self.bin_setup:
@@ -58,6 +64,8 @@ class SignalDataset(Dataset):
             else:
                 self.loaded_signal[label].append(np.fromfile(bin_config['bin_path'],
                                                              dtype=self.source_dtype))  # interval
+    def _load_noise(self):
+        self.loaded_noise = self.noise['intensity']*np.fromfile(self.noise['bin_path'], dtype=self.source_dtype)
 
     def _create_index_setup(self):
         for label, signal_list in self.loaded_signal.items():
@@ -74,7 +82,13 @@ class SignalDataset(Dataset):
 
     def __getitem__(self, idx):
         label, sig_id, sample_id = self.indices[idx]
+        start_index = sig_id * 500000
+        if self.noise is not None:
+            return ((self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size] +
+                    self.loaded_noise[start_index + sample_id: start_index + sample_id + self.window_size]).reshape(1 , -1),
+                    self.label_dict[label])
 
         return (self.loaded_signal[label][sig_id][sample_id: sample_id + self.window_size].reshape(1 , -1),
                 self.label_dict[label])
+
 

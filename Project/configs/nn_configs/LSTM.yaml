@@ -8,7 +8,7 @@ model:
       lstm_config:
         - name: LSTM
           kwargs:
-            input_size: 1000
+            input_size: 8500
             hidden_size: 512
             num_layers: 2
             batch_first: True
@@ -22,7 +22,7 @@ model:
           id: linear1
         - name: dropout
           kwargs:
-            p: 0.5
+            p: 0.2
           id: dropout
         - name: relu
         - name: Linear
@@ -39,10 +39,11 @@ tensorboard_log_frequency:
 
 
 training_params:
-  lr: 0.01
-  epoch_num: 20
+  lr: 0.0005
+  epoch_num: 4
+  warmups: 1
   dataloader_params:
-    batch_size: 256
+    batch_size: 64
 
 eval_params:
   batch_size: 256

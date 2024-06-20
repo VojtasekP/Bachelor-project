@@ -11,49 +11,50 @@ model:
       - name: InceptionBlock
         kwargs:
           in_channels: 1
-          bottleneck_channels: 16
-          n_filters: 20
+          bottleneck_channels: 4
+          n_filters: 15
           kernel_sizes: [17, 65, 131]
           use_residual: True
         id: inceptionblock1
 
       - name: InceptionBlock
         kwargs:
-          in_channels: 80 # n_filters x 4
-          bottleneck_channels: 80
-          n_filters: 20
+          in_channels: 60 # n_filters x 4
+          bottleneck_channels: 48
+          n_filters: 25
           kernel_sizes: [17, 65, 131]
           use_residual: True
         id: inceptionblock2
 
       - name: AdaptiveAvgPool1d
         kwargs:
-          output_size: 2
+          output_size: 12
         id: adaptivepool
       - name: Flatten
         kwargs:
           start_dim: 1
       - name: Linear
         kwargs:
-          in_features: 4800 # outputsize of adaptivep x n_filters x 4
-          out_features: 1024
+          in_features: 1200 # outputsize of adaptivep x n_filters x 4
+          out_features: 300
         id: linear1
       - name: relu
       - name: Linear
         kwargs:
-          in_features: 1024
+          in_features: 300
           out_features: 6
         id: linear2
 
 training_params:
-  epoch_num: 10
-  lr: 0.001
+  epoch_num: 7
+  lr: 0.0018
+  warmups: 1
   dataloader_params:
-    batch_size: 256
+    batch_size: 32
 
 
 eval_params:
-  batch_size: 256
+  batch_size: 32
 
 
 # TODO: RENAME USE GPT
@@ -62,12 +63,5 @@ tensorboard_log_frequency:
   accuracy: 128
   confusion_matrix: 128
 
-bottleneck:
-  - name: Conv1d
-    kwargs:
-      in_channels:
-      out_channels:
-      kernel_size: 1
-      bias: False
 
 
