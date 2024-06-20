@@ -18,8 +18,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score, classification_rep
 from torch.utils.data import DataLoader, Dataset, random_split
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
-
-import networks
+import networks.networks as networks
 
 DEVICE = "cuda"
 
@@ -34,7 +33,8 @@ class SignalModel:
         self.config = config
         self.model_config = self.config["model"]
         self._model = self.init_model()
-        self._transform = self.init_transform()
+        self._train_transform = self.init_transform(train=True)
+        self._val_transform = self.init_transform(train=False)
 
     @abc.abstractmethod
     def init_model(self):
@@ -55,16 +55,17 @@ class SignalModel:
     def save(self, path: Path):
         pass
 
-    def init_transform(self) -> Callable:
+    def init_transform(self, train:bool) -> Callable:
 
         def transform(x):
-            if isinstance(x, np.ndarray):
-                x = np.swapaxes(x, 1, 2)
+            x = np.swapaxes(x, 1, 2)
 
-                x_aug = tsaug.AddNoise(scale=0.1).augment(x)
-                return np.swapaxes(x_aug, 1, 2)
-            else:
-                print(x, x.shape, type(x))
+
+            x = x / np.max(np.abs(x))
+            # x = (x - np.mean(x)) / np.std(x)
+            if train:
+                x = tsaug.AddNoise(scale=0.1).augment(x)
+            return np.swapaxes(x, 1, 2)
         return transform
 
     # def _evaluate(self, x: np.ndarray) -> np.ndarray:
@@ -148,6 +149,10 @@ class NeuroNet(SignalModel, ABC):
         self.total_batch_id = 1
         self.epoch_trained = 0
 
+        self.total_params = sum(p.numel() for p in self._model.parameters())
+        self.trainable_params = sum(p.numel() for p in self._model.parameters() if p.requires_grad)
+
+
     def state_dict(self) -> dict:
         return self.best_model_dict
 
@@ -163,7 +168,6 @@ class NeuroNet(SignalModel, ABC):
                 self.layers_configs[name] = kwargs
 
     def init_model(self):
-        # TODO: make in_channels as parameter
         self.load_layers()
         match self.config["model"]["type"]:
             case "MLP":
@@ -177,6 +181,10 @@ class NeuroNet(SignalModel, ABC):
                 return networks.CNN(self.layers_configs)
             case "LSTM-FCN" | "lstm_fcn":
                 return networks.RnnFcn(self.layers_configs)
+            case "ResNet":
+                return networks.ResNet(num_classes=6)
+            case "EfficientNet":
+                return networks.EfficientNet(num_classes=6)
 
     # train and validation dataloader split for cases with kfold CV and without CV
     def _train_val_dl_split(self, dataset: Dataset, train_idx, val_idx) -> (DataLoader, DataLoader):
@@ -194,6 +202,7 @@ class NeuroNet(SignalModel, ABC):
             traindl = DataLoader(train_ds,
                                  **self.config["training_params"].get("dataloader_params", {}),
                                  shuffle=True)
+
             valdl = DataLoader(test_ds,
                                **self.config["eval_params"])
         return traindl, valdl
@@ -201,8 +210,8 @@ class NeuroNet(SignalModel, ABC):
     def train(self, train_dataset: Dataset, train_idx: list = None, val_idx: list = None) -> None:
 
         self.optimizer = optim.Adam(self._model.parameters(), lr=self.config["training_params"]["lr"])
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
-                        T_0=(1+(self.config["training_params"]["epoch_num"])//self.config["training_params"]["warmups"]))
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1+self.config["training_params"]["epoch_num"]//2)
+                        #T_0=(1+(self.config["training_params"]["epoch_num"])//self.config["training_params"]["warmups"]))
 
         train_dataloader, val_dataloader = self._train_val_dl_split(train_dataset, train_idx, val_idx)
 
@@ -227,7 +236,7 @@ class NeuroNet(SignalModel, ABC):
 
         for i, (inputs, targets) in enumerate(train_dataloader):
             self._model.train()
-            inputs = torch.from_numpy(self._transform(inputs.numpy()))
+            inputs = torch.from_numpy(self._train_transform(inputs.numpy()))
             inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
             self.optimizer.zero_grad()
 
@@ -253,12 +262,11 @@ class NeuroNet(SignalModel, ABC):
             outputs = torch.empty(size=(0, 6), dtype=torch.float32, device=DEVICE)
             targets = torch.empty(size=(0, 1), dtype=torch.long, device=DEVICE).flatten()
             for i, (input, target) in enumerate(val_dataloader):
-                input = torch.from_numpy(self._transform(input.numpy()))
+                input = torch.from_numpy(self._val_transform(input.numpy()))
                 input, target = input.to(DEVICE), target.to(DEVICE)
                 output = self._model(input)
                 outputs = torch.cat((outputs, output), dim=0)
                 targets = torch.cat((targets, target), dim=0)
-
             if self.tensorboard:
                 self.calculate_metrics(outputs, targets)
 
@@ -307,6 +315,7 @@ class NeuroNet(SignalModel, ABC):
     def predict(self, x: np.ndarray, argmax=True) -> np.ndarray:
         self._model.eval()
         with torch.no_grad():
+            x = self._val_transform(x)
             x = torch.from_numpy(x).to(DEVICE)
 
             if x.ndim == 2:

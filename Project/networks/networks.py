@@ -4,8 +4,9 @@ import torch.nn.functional as F
 import torchaudio.transforms as T
 from torchvision.ops import Conv2dNormActivation
 
-from inceptionTime import Inception, InceptionBlock
+from networks.inceptionTime import Inception, InceptionBlock
 from torchvision import models
+
 
 functions = {
     # activation functions
