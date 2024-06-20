@@ -122,44 +122,10 @@ def train_network(config):
 
 
 
-
-
 config = {
     "input_size": tune.choice([1000, 2500, 5000, 7500, 10000, 12500, 15000]),
-    "batch_size": tune.choice([128, 256, 512, 1024]),
-    "first_conv" :{
-        "out_channels": tune.qrandint(2,32, 2),
-        "kernel_size": tune.randint(2,15),
-        "stride" : tune.randint(1,4),
-        "padding": tune.randint(1,4),
-    },
-    "second_conv": {
-        "out_channels": tune.qrandint(8,64, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "third_conv": {
-        "out_channels": tune.qrandint(16,128, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "fourth_conv": {
-        "out_channels": tune.qrandint(32,256, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "adaptivepool": tune.randint(1, 10),
-    "linear": tune.randint(500, 4000),
-    "dropout": tune.uniform(0.1, 0.5),
     "lr" : tune.uniform(1e-6, 1e-1),
-    "warmups" : tune.randint(1, 4),
-}
-config = {
-    "input_size": tune.choice([1000, 2500, 5000, 7500, 10000, 12500, 15000]),
-    "lr" : tune.uniform(1e-6, 1e-1)
+    "channel" : tune.choice(["ch1", "ch2", "ch3"])
 }
 
 network = "CNN_spec"

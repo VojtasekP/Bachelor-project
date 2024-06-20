@@ -1,40 +1,19 @@
-import os
-import pickle
 import re
-import tempfile
-
-import numpy as np
 
 import torch
 
-from matplotlib import pyplot as plt
 from ray.air import CheckpointConfig
 from ray.tune.search.hebo import HEBOSearch
-from sklearn.metrics import confusion_matrix, accuracy_score, classification_report
 from torch import optim
-from torch.utils.data import DataLoader, Dataset, random_split
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import trange
-import seaborn as sns
-import networks
-from signal_dataset import SignalDataset
-import tsaug
-import torchaudio.transforms as T
+from dataset.signal_dataset import SignalDataset
 from ray.tune.search.optuna import OptunaSearch
-import torchaudio
-import ray
 from ray import train, tune
-from ray.train import Checkpoint, get_checkpoint
-import ray.train.torch
 from functools import partial
 from ray.tune.schedulers import ASHAScheduler
-from IPython.display import Audio
-from matplotlib.patches import Rectangle
-from signal_model import SignalModel, NeuroNet, load_yaml
+from signal_model import NeuroNet, load_yaml
 from pathlib import Path
 import torch.optim
-from sklearn.model_selection import KFold
-import yaml
+
 
 def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
     layers_configs = nn_config["model"]["kwargs"]["layers"]
@@ -130,7 +109,7 @@ test_config = [{"label": (int(i.stem)-1)//4,
 
 
 
-nn_config = load_yaml(Path("nn_yaml_configs/LSTM.yaml"))
+nn_config = load_yaml(Path("../configs/nn_configs/LSTM.yaml"))
 
 config = {
     "lstm": {
