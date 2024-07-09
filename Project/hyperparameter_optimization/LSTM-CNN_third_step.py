@@ -37,46 +37,73 @@ def train_network(config):
                      "interval": [0, int(4.5 * sample_rate)],
                      "bin_path": list(i.glob('*' + config["channel"] + '.bin'))[0]}
                     for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
-    train_set = SignalDataset(step=config["step"], window_size=config["input_size"], bin_setup=train_config, source_dtype="float32")
+    train_set = SignalDataset(step=10000, window_size=config["input_size"], bin_setup=train_config, source_dtype="float32")
     # nn_config["training_params"]["warmups"] = config["warmups"]
     nn_config["training_params"]["lr"] = config["lr"]
-    # nn_config["training_params"]["dataloader_params"]["batch_size"] = config["batch_size"]
-    # nn_config["training_params"]["epoch_num"] = config["epoch_num"]
-    # update_layer_argument(nn_config, 'spectrogram', 'n_fft', config['spectrogram'])
-    # update_layer_argument(nn_config, 'conv1', 'out_channels', config['first_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv1', 'kernel_size', config['first_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
-    #
-    # update_layer_argument(nn_config, 'bn1', 'num_features', config['first_conv']["out_channels"])
-    #
-    # update_layer_argument(nn_config, 'conv2', 'in_channels', config['first_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv2', 'out_channels', config['second_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv2', 'kernel_size', config['second_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv2', 'padding', config['second_conv']['kernel_size'] // 2)
-    #
-    # update_layer_argument(nn_config, 'bn2', 'num_features', config['second_conv']["out_channels"])
-    #
-    # update_layer_argument(nn_config, 'conv3', 'in_channels', config['second_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv3', 'out_channels', config['third_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv3', 'kernel_size', config['third_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv3', 'padding', config['third_conv']['kernel_size'] // 2)
-    #
-    # update_layer_argument(nn_config, 'bn3', 'num_features', config['third_conv']["out_channels"])
-    #
-    # update_layer_argument(nn_config, 'conv4', 'in_channels', config['third_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv4', 'out_channels', config['fourth_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv4', 'kernel_size', config['fourth_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv4', 'padding', config['fourth_conv']['kernel_size'] // 2)
-    #
-    # update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
-    #
-    # update_layer_argument(nn_config, 'adaptivepool', 'output_size', config['adaptivepool'])
-    #
-    # update_layer_argument(nn_config, 'linear1', 'in_features', config['fourth_conv']["out_channels"]*(config['adaptivepool']**2))
-    # update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
-    # update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
-    # update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
+    nn_config["training_params"]["dataloader_params"]["batch_size"] = config["batch_size"]
+    lstm_hidden_size = nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["hidden_size"]
+    lstm_bidirectional = nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["bidirectional"]
 
+    update_layer_argument(nn_config, "lstm", arg="hidden_size", value=config["lstm"]["hidden_size"])
+    update_layer_argument(nn_config, "lstm", arg="num_layers", value=config["lstm"]["num_layers"])
+    update_layer_argument(nn_config, "lstm", arg="bidirectional", value=config["lstm"]["bidirectional"])
+
+
+    lstm_output_size = lstm_hidden_size * 2 if lstm_bidirectional else lstm_hidden_size
+
+    # Update LSTM input size in config
+    update_layer_argument(nn_config, "lstm", "input_size", config["input_size"])
+
+    update_layer_argument(nn_config, "conv1", "output_size", config["conv1"]["output_size"])
+    update_layer_argument(nn_config, "conv1", "kernel_size", config["conv1"]["kernel_size"])
+    update_layer_argument(nn_config, "conv1", "stride", config["conv1"]["stride"])
+    update_layer_argument(nn_config, "conv1", "padding", config["conv1"]["padding"])
+
+
+    update_layer_argument(nn_config, "conv2", "output_size", config["conv2"]["output_size"])
+    update_layer_argument(nn_config, "conv2", "kernel_size", config["conv2"]["kernel_size"])
+    update_layer_argument(nn_config, "conv2", "stride", config["conv2"]["stride"])
+    update_layer_argument(nn_config, "conv2", "padding", config["conv2"]["padding"])
+
+
+    update_layer_argument(nn_config, "conv3", "output_size", config["conv3"]["output_size"])
+    update_layer_argument(nn_config, "conv3", "kernel_size", config["conv3"]["kernel_size"])
+    update_layer_argument(nn_config, "conv3", "stride", config["conv3"]["stride"])
+    update_layer_argument(nn_config, "conv3", "padding", config["conv3"]["padding"])
+
+    # CNN layer configurations
+    conv1_out_channels = nn_config["model"]["kwargs"]["layers"]["fcn_config"][0]["kwargs"]["out_channels"]
+    conv2_out_channels = nn_config["model"]["kwargs"]["layers"]["fcn_config"][3]["kwargs"]["out_channels"]
+    conv2_out_channels = nn_config["model"]["kwargs"]["layers"]["fcn_config"][5]["kwargs"]["out_channels"]
+
+    # CNN layer parameters (example)
+    kernel_size_conv1 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][0]["kwargs"]["kernel_size"]
+    kernel_size_conv2 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][3]["kwargs"]["kernel_size"]
+    kernel_size_conv3 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][6]["kwargs"]["kernel_size"]
+
+    stride_conv1 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][0]["kwargs"]["stride"]
+    stride_conv2 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][3]["kwargs"]["stride"]
+    stride_conv3 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][6]["kwargs"]["stride"]
+
+    padding_conv1 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][0]["kwargs"]["padding"]
+    padding_conv2 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][3]["kwargs"]["padding"]
+    padding_conv3 = nn_config["model"]["kwargs"]["layers"]["fcn_config"][6]["kwargs"]["padding"]
+    # Calculate CNN output sizes (example, using the formula)
+    def calculate_conv_output_size(input_size, kernel_size, stride, padding):
+        return (input_size - kernel_size + 2 * padding) // stride + 1
+
+    # Example computation
+    input_size = 1000
+    conv1_output_size = calculate_conv_output_size(input_size, kernel_size_conv1, stride=stride_conv1, padding=padding_conv1)
+    conv2_output_size = calculate_conv_output_size(conv1_output_size, kernel_size_conv2, stride=stride_conv2, padding=padding_conv2)
+    conv3_output_size = calculate_conv_output_size(conv2_output_size, kernel_size_conv3, stride=stride_conv2, padding=padding_conv2)
+
+    update_layer_argument(nn_config, "adaptpool", arg="adaptpool", config["adaptpool"])
+
+    update_layer_argument(nn_config, "linear1", arg="in_features", value=lstm_output_size+ conv_output)
+    update_layer_argument(nn_config, "linear1", arg="out_features", value=config["linear1"])
+    update_layer_argument(nn_config, "linear2", arg="in_features", value=config["linear1"])
+    update_layer_argument(nn_config, "dropout", arg="p", value=config["dropout"])
     neuro_net = NeuroNet(config=nn_config, tensorboard=True)
 
     neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
@@ -122,44 +149,18 @@ def train_network(config):
 
 
 
-
-
 config = {
-    "input_size": tune.choice([1000, 2500, 5000, 7500, 10000, 12500, 15000]),
+    "lstm": {
+        "hidden_size": tune.randint(128,2500),
+        "num_layers": tune.choice([1, 2, 3, 4])},
+    "conv1": tune.choice([1, 2]),
+    "conv2": tune.choice([1, 2]),
+    "linear1": tune.randint(512,5000),
+    "linear2": tune.randint(200, 3000),
+    "lr": tune.uniform(1e-5, 1e-1),
+    "dropout": tune.uniform(0, 0.5),
     "batch_size": tune.choice([128, 256, 512, 1024]),
-    "first_conv" :{
-        "out_channels": tune.qrandint(2,32, 2),
-        "kernel_size": tune.randint(2,15),
-        "stride" : tune.randint(1,4),
-        "padding": tune.randint(1,4),
-    },
-    "second_conv": {
-        "out_channels": tune.qrandint(8,64, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "third_conv": {
-        "out_channels": tune.qrandint(16,128, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "fourth_conv": {
-        "out_channels": tune.qrandint(32,256, 2),
-        "kernel_size": tune.randint(2, 15),
-        "stride": tune.randint(1, 4),
-        "padding": tune.randint(1, 4),
-    },
-    "adaptivepool": tune.randint(1, 10),
-    "linear": tune.randint(500, 4000),
-    "dropout": tune.uniform(0.1, 0.5),
-    "lr" : tune.uniform(1e-6, 1e-1),
-    "warmups" : tune.randint(1, 4),
-}
-config = {
-    "input_size": tune.choice([1000, 2500, 5000, 7500, 10000, 12500, 15000]),
-    "lr" : tune.uniform(1e-6, 1e-1)
+    "epoch_num": tune.choice([5, 10, 15, 20, 40]),
 }
 
 network = "CNN_spec"

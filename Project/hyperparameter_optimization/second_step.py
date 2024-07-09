@@ -8,11 +8,14 @@ from dataset.signal_dataset import SignalDataset
 from ray import train, tune
 from functools import partial
 from ray.tune.schedulers import ASHAScheduler
-from signal_model import NeuroNet, load_yaml
+from signal_model import NeuroNet
 from pathlib import Path
 import torch.optim
+import yaml
 
-
+def load_yaml(config_path: Path):
+    with config_path.open(mode="r") as yaml_file:
+        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
     layers_configs = nn_config["model"]["kwargs"]["layers"]
     if isinstance(layers_configs, list):
@@ -36,38 +39,39 @@ def train_network(config, network):
                      "interval": [0, int(4.5 * sample_rate)],
                      "bin_path": list(i.glob('*ch2.bin'))[0]}
                     for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
-    nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/nn_configs/" + network + ".yaml"))
+    nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/configs/nn_configs/" + network + ".yaml"))
 
     if network == "InceptionTime":
-        train_set = SignalDataset(step=12000, window_size=8500, bin_setup=train_config, source_dtype="float32")
+        train_set = SignalDataset(step=12000, window_size=config["input_size"], bin_setup=train_config, source_dtype="float32")
     else:
-        train_set = SignalDataset(step=10000, window_size=8500, bin_setup=train_config, source_dtype="float32")
+        train_set = SignalDataset(step=10000, window_size=config["input_size"], bin_setup=train_config, source_dtype="float32")
 
     if network == "LSTM":
+
         nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["input_size"] = config["input_size"]
     if network == "LSTM-CNN":
-        print(nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["input_size"])
-        nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["input_size"] = config["input_size"]
-        nn_config["model"]["kwargs"]["layers"]["output_config"][0]["kwargs"]["in_features"] = (
-                    ((config["input_size"] - 56) // 12) + 1)
 
+
+        nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["input_size"] = config["input_size"]
+
+        nn_config["model"]["kwargs"]["layers"]["output_config"][0]["kwargs"]["in_features"] = ((
+                    (8*(((config["input_size"] - 56) // 12) + 1))) + 1024)
+        # print(nn_config["model"]["kwargs"]["layers"]["output_config"][0]["kwargs"]["in_features"])
     neuro_net = NeuroNet(config=nn_config, tensorboard=True)
 
     match network:
         case "InceptionTime":
-            neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
+            neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=nn_config["training_params"]["optimizer_params"]["kwargs"]["lr"])
             scheduler = (
-                torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(neuro_net.optimizer,
-                                                                     T_0=(1+nn_config["training_params"][
-                                                                              "epoch_num"] // 2)))
+                torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer, T_max=nn_config["training_params"]["epoch_num"]))
 
         case "ResNet":
-            neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
+            neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["optimizer_params"]["kwargs"]["lr"])
             scheduler = (
                 torch.optim.lr_scheduler.ExponentialLR(neuro_net.optimizer, gamma=0.8))
 
         case "LSTM":
-            neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
+            neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["optimizer_params"]["kwargs"]["lr"])
             scheduler = (
                 torch.optim.lr_scheduler.PolynomialLR(neuro_net.optimizer, power=0.5,
                                                       total_iters=nn_config["training_params"]["epoch_num"]))
@@ -75,7 +79,8 @@ def train_network(config, network):
 
 
         case "LSTM-CNN":
-            neuro_net.optimizer = optim.RMSprop(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
+
+            neuro_net.optimizer = optim.RMSprop(neuro_net._model.parameters(), lr=nn_config["training_params"]["optimizer_params"]["kwargs"]["lr"])
             scheduler = (
                 torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(neuro_net.optimizer,
                                                                      T_0=(1+nn_config["training_params"][
@@ -102,23 +107,18 @@ def train_network(config, network):
                       "lr": scheduler.get_last_lr()[0]})
 
 
-config = {
-    "lr": tune.uniform(1e-6, 1e-1),
-    "optimizer": tune.choice(["adam", "adamw", "sgd", "rmsprop"]),
-    "scheduler": tune.choice(["cosine", "polynomial", "exponential", "warmup"]),
-}
 
 config_length = {
-    "input_size": tune.grid_search([1000, 2500, 5000, 8500, 10000, 12500])
+    "input_size": tune.grid_search([1000, 2500, 5000, 7500, 10000, 12500])
 }
-nn_models = ["ResNet", "InceptionTime"]
+nn_models = ["ResNet"]
 
 for network in nn_models:
 
     hebo = HEBOSearch(metric="accuracy", mode="max")
     # hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
-    iter = {"InceptionTime": 7, "ResNet": 20, "LSTM": 20, "CNN_spec": 20, "LSTM-CNN": 20}
-    iter_min = {"InceptionTime": 2, "ResNet": 5, "LSTM": 5, "CNN_spec": 5, "LSTM-CNN": 5}
+    iter = {"InceptionTime": 10, "ResNet": 16, "LSTM": 16, "CNN_spec": 20, "LSTM-CNN": 16}
+    iter_min = {"InceptionTime": 4, "ResNet": 8, "LSTM": 5, "CNN_spec": 5, "LSTM-CNN": 5}
     asha_scheduler = ASHAScheduler(
         time_attr='training_iteration',
         metric='accuracy',
@@ -130,10 +130,10 @@ for network in nn_models:
     # ②
     result = tune.run(
         partial(train_network, network=network),
-        name="LENGTH-" + network,
+        name="LENGTH-FINAL" + network,
         resources_per_trial={"cpu": 4, "gpu": 1},
         num_samples=5,
-        scheduler=asha_scheduler,
+        # scheduler=asha_scheduler,
         config=config_length,
         storage_path="/mnt/home2/hparams_checkpoints/",
         verbose=1,

@@ -32,41 +32,25 @@ def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
 def train_network(config, train_config, test_config):
 
 
-    train_set = SignalDataset(step=5000, window_size=1000, bin_setup=train_config, source_dtype="float32")
+    train_set = SignalDataset(step=1000, window_size=1000, bin_setup=train_config, source_dtype="float32")
 
     nn_config["training_params"]["lr"] = config["lr"]
     nn_config["training_params"]["dataloader_params"]["batch_size"] = config["batch_size"]
-    # nn_config["training_params"]["epoch_num"] = config["epoch_num"]
-
-    update_layer_argument(nn_config, "inceptionblock1", arg="n_filters",
-                          value=config["inceptionblock1"]["n_filters"])
-
-    update_layer_argument(nn_config, "inceptionblock1", arg="bottleneck_channels",
-                          value=config["inceptionblock1"]["bottleneck_channels"])
-
-
-    update_layer_argument(nn_config, "inceptionblock2", arg="in_channels",
-                          value=4*(config["inceptionblock1"]["n_filters"]))
-
-    update_layer_argument(nn_config, "inceptionblock2", arg="n_filters",
-                          value=config["inceptionblock2"]["n_filters"])
-
-    update_layer_argument(nn_config, "inceptionblock2", arg="bottleneck_channels",
-                          value=config["inceptionblock2"]["bottleneck_channels"])
-
-
-    update_layer_argument(nn_config, "adaptivepool", arg="output_size", value=config["adaptivepool"])
-    update_layer_argument(nn_config, "linear1", arg="in_features",
-                          value=(4*config["inceptionblock2"]["n_filters"]*config["adaptivepool"]))
+    nn_config["training_params"]["epoch_num"] = config["epoch_num"]
+    update_layer_argument(nn_config, "lstm", arg="hidden_size", value=config["lstm"]["hidden_size"])
+    update_layer_argument(nn_config, "lstm", arg="num_layers", value=config["lstm"]["num_layers"])
+    # update_layer_argument(nn_config, "lstm", arg="bidirectional", value=config["lstm"]["bidirectional"])
+    update_layer_argument(nn_config, "linear1", arg="in_features", value=config["lstm"]["hidden_size"]*2)
     update_layer_argument(nn_config, "linear1", arg="out_features", value=config["linear1"])
     update_layer_argument(nn_config, "linear2", arg="in_features", value=config["linear1"])
-
+    update_layer_argument(nn_config, "dropout", arg="p", value=config["dropout"])
 
     neuro_net = NeuroNet(config=nn_config, tensorboard=True)
 
     neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=neuro_net.config["training_params"]["lr"])
     scheduler = (
-        torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer, nn_config["training_params"]["epoch_num"]))
+        torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(neuro_net.optimizer,
+                                                             T_0=(neuro_net.config["training_params"]["epoch_num"]+1)//config["warmups"]))
 
     train_dl, val_dl = neuro_net._train_val_dl_split(train_set, train_idx=None, val_idx=None)
 
@@ -98,12 +82,12 @@ def train_network(config, train_config, test_config):
         }
         train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
                      "lr": scheduler.get_last_lr()[0]})
-    # with tempfile.TemporaryDirectory() as checkpoint_dir:
-    #     data_path = Path(checkpoint_dir) / "data.pkl"
-    #     with open(data_path, "wb") as fp:
-    #         pickle.dump(checkpoint_data, fp)
-    #     checkpoint = Checkpoint.from_directory(checkpoint_dir)
-    #     train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1]}, checkpoint=checkpoint)
+        # with tempfile.TemporaryDirectory() as checkpoint_dir:
+        #     data_path = Path(checkpoint_dir) / "data.pkl"
+        #     with open(data_path, "wb") as fp:
+        #         pickle.dump(checkpoint_data, fp)
+        #     checkpoint = Checkpoint.from_directory(checkpoint_dir)
+        #     train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1]}, checkpoint=checkpoint)
 
 
 
@@ -124,32 +108,23 @@ test_config = [{"label": (int(i.stem)-1)//4,
 
 
 
+
+nn_config = load_yaml(Path("../configs/nn_configs/LSTM.yaml"))
+
 config = {
-    "inceptionblock1": {
-        "n_filters": tune.randint(2, 20),
-        "bottleneck_channels": tune.randint(1, 16),
-        # "kernel_sizes": [tune.choice([2*i+1 for i in range(7, 15)]),
-        #                  tune.choice([2*i+1 for i in range(25, 45)]),
-        #                  tune.choice([2*i+1 for i in range(45, 80)])]
-    },
-    "inceptionblock2": {
-        "n_filters": tune.randint(16, 50),
-        "bottleneck_channels": tune.randint(16, 50),
-        # "kernel_sizes": [tune.choice([2 * i + 1 for i in range(7, 15)]),
-        #                  tune.choice([2 * i + 1 for i in range(25, 45)]),
-        #                  tune.choice([2 * i + 1 for i in range(45, 80)])]
-    },
-    "adaptivepool": tune.randint(6, 15),
-    "linear1": tune.randint(256, 1024),
+    "lstm": {
+        "hidden_size": tune.randint(128,2500),
+        "num_layers": tune.choice([1, 2, 3, 4])},
+    "linear1": tune.randint(512,5000),
+    "linear2": tune.randint(200, 3000),
     "lr": tune.uniform(1e-5, 1e-1),
-    "batch_size": tune.choice([128, 256, 512, 755, 1024]),
-    # "epoch_num": tune.choice([10, 15, 20])
+    "dropout": tune.uniform(0, 0.5),
+    "batch_size": tune.choice([128, 256, 512, 1024]),
+    "epoch_num": tune.choice([5, 10, 15, 20, 40]),
+    "window_size" : tune.randint(500, 1000000),
 }
 
-network = "InceptionTime"
-nn_config = load_yaml(Path("nn_configs/" + network + ".yaml"))
 hebo = HEBOSearch(metric="loss", mode="min")
-hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
 
 optuna_search = OptunaSearch(
     metric="accuracy",
@@ -167,13 +142,13 @@ asha_scheduler = ASHAScheduler(
 result = tune.run(
     partial(train_network, train_config=train_config, test_config=test_config),
     resources_per_trial={"cpu": 10, "gpu": 1},
+    config=config,
     num_samples=150,
     checkpoint_config=CheckpointConfig(num_to_keep=5),
     search_alg=hebo,
     scheduler=asha_scheduler,
-    verbose=1,
+    verbose=1
 )
-
 
 best_trial = result.get_best_trial("accuracy", "max", "last")
 print(best_trial)
@@ -181,12 +156,3 @@ print(f"Best trial accuracy: {best_trial.last_result['accuracy']}")
 print(f"Best trial validation loss: {best_trial.last_result['loss']}")
 
 print(f"Best trial config: {best_trial.config}")
-
-# │ adaptivepool                                 10 │
-# │ batch_size                                  256 │
-# │ inceptionblock1/bottleneck_channels           4 │
-# │ inceptionblock1/n_filters                    15 │
-# │ inceptionblock2/bottleneck_channels          47 │
-# │ inceptionblock2/n_filters                    20 │
-# │ linear1                                     305 │
-# │ lr                                      0.00251

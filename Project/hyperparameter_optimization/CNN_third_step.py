@@ -33,49 +33,43 @@ def train_network(config):
     sample_rate = 1562500
     signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
     train_config = [{"label": (int(i.stem) - 1) // 4,
-                     "channels": len(list(i.glob('*' + config["channel"] + '.bin'))),
+                     "channels": len(list(i.glob('*ch2.bin'))),
                      "interval": [0, int(4.5 * sample_rate)],
-                     "bin_path": list(i.glob('*' + config["channel"] + '.bin'))[0]}
+                     "bin_path": list(i.glob('*ch2.bin'))[0]}
                     for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
-    train_set = SignalDataset(step=config["step"], window_size=config["input_size"], bin_setup=train_config, source_dtype="float32")
-    # nn_config["training_params"]["warmups"] = config["warmups"]
-    nn_config["training_params"]["lr"] = config["lr"]
-    # nn_config["training_params"]["dataloader_params"]["batch_size"] = config["batch_size"]
-    # nn_config["training_params"]["epoch_num"] = config["epoch_num"]
-    # update_layer_argument(nn_config, 'spectrogram', 'n_fft', config['spectrogram'])
-    # update_layer_argument(nn_config, 'conv1', 'out_channels', config['first_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv1', 'kernel_size', config['first_conv']['kernel_size'])
+    train_set = SignalDataset(step=10000, window_size=5000, bin_setup=train_config, source_dtype="float32")
+    update_layer_argument(nn_config, 'conv1', 'out_channels', config['first_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv1', 'kernel_size', config['first_conv']['kernel_size'])
     # update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
     #
-    # update_layer_argument(nn_config, 'bn1', 'num_features', config['first_conv']["out_channels"])
+    update_layer_argument(nn_config, 'bn1', 'num_features', config['first_conv']["out_channels"])
     #
-    # update_layer_argument(nn_config, 'conv2', 'in_channels', config['first_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv2', 'out_channels', config['second_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv2', 'kernel_size', config['second_conv']['kernel_size'])
+    update_layer_argument(nn_config, 'conv2', 'in_channels', config['first_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv2', 'out_channels', config['second_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv2', 'kernel_size', config['second_conv']['kernel_size'])
     # update_layer_argument(nn_config, 'conv2', 'padding', config['second_conv']['kernel_size'] // 2)
     #
-    # update_layer_argument(nn_config, 'bn2', 'num_features', config['second_conv']["out_channels"])
+    update_layer_argument(nn_config, 'bn2', 'num_features', config['second_conv']["out_channels"])
     #
-    # update_layer_argument(nn_config, 'conv3', 'in_channels', config['second_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv3', 'out_channels', config['third_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv3', 'kernel_size', config['third_conv']['kernel_size'])
+    update_layer_argument(nn_config, 'conv3', 'in_channels', config['second_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv3', 'out_channels', config['third_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv3', 'kernel_size', config['third_conv']['kernel_size'])
     # update_layer_argument(nn_config, 'conv3', 'padding', config['third_conv']['kernel_size'] // 2)
     #
-    # update_layer_argument(nn_config, 'bn3', 'num_features', config['third_conv']["out_channels"])
+    update_layer_argument(nn_config, 'bn3', 'num_features', config['third_conv']["out_channels"])
     #
-    # update_layer_argument(nn_config, 'conv4', 'in_channels', config['third_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv4', 'out_channels', config['fourth_conv']["out_channels"])
-    # update_layer_argument(nn_config, 'conv4', 'kernel_size', config['fourth_conv']['kernel_size'])
+    update_layer_argument(nn_config, 'conv4', 'in_channels', config['third_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv4', 'out_channels', config['fourth_conv']["out_channels"])
+    update_layer_argument(nn_config, 'conv4', 'kernel_size', config['fourth_conv']['kernel_size'])
     # update_layer_argument(nn_config, 'conv4', 'padding', config['fourth_conv']['kernel_size'] // 2)
     #
-    # update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
+    update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
     #
     # update_layer_argument(nn_config, 'adaptivepool', 'output_size', config['adaptivepool'])
-    #
     # update_layer_argument(nn_config, 'linear1', 'in_features', config['fourth_conv']["out_channels"]*(config['adaptivepool']**2))
-    # update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
-    # update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
-    # update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
+    update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
+    update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
+    update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
 
     neuro_net = NeuroNet(config=nn_config, tensorboard=True)
 
@@ -122,13 +116,33 @@ def train_network(config):
 
 
 
+
+
 config = {
-    "input_size": tune.choice([1000, 2500, 5000, 7500, 10000, 12500, 15000]),
-    "lr" : tune.uniform(1e-6, 1e-1),
-    "channel" : tune.choice(["ch1", "ch2", "ch3"])
+    "first_conv" :{
+        "out_channels": tune.qrandint(2,32, 2),
+        "kernel_size": tune.randint(2,100),
+    },
+    "second_conv": {
+        "out_channels": tune.qrandint(4,64, 2),
+        "kernel_size": tune.randint(2, 100),
+    },
+    "third_conv": {
+        "out_channels": tune.qrandint(8,128, 2),
+        "kernel_size": tune.randint(2, 100),
+    },
+    "fourth_conv": {
+        "out_channels": tune.qrandint(32,256, 2),
+        "kernel_size": tune.randint(2, 100),
+    },
+    "adaptivepool": tune.randint(1, 10),
+    "linear": tune.randint(50, 2000),
+    "dropout": tune.uniform(0, 0.5),
 }
 
-network = "CNN_spec"
+
+
+network = "CNN"
 nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/nn_configs/" + network + ".yaml"))
 hebo = HEBOSearch(metric="accuracy", mode="max")
 # hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
@@ -143,13 +157,12 @@ asha_scheduler = ASHAScheduler(
     mode='min',
     max_t=20,
     grace_period=5,
-    reduction_factor=3
 )
  # ②
 result = tune.run(
     partial(train_network),
     resources_per_trial={"cpu": 10, "gpu": 1},
-    num_samples=200,
+    num_samples=100,
     checkpoint_config=CheckpointConfig(num_to_keep=5),
     search_alg=hebo,
     config=config,
