@@ -1,4 +1,5 @@
 import abc
+import random
 from abc import ABC
 from pathlib import Path
 from typing import Callable
@@ -10,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import tsaug
-import yaml
 from matplotlib import pyplot as plt
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -18,20 +18,34 @@ from sklearn.metrics import confusion_matrix, accuracy_score, classification_rep
 from torch.utils.data import DataLoader, Dataset, random_split
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import trange
+
 import networks.networks as networks
 
 DEVICE = "cuda"
 
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
 
-def load_yaml(config_path: Path) -> dict:
-    with config_path.open(mode="r") as yaml_file:
-        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
-
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
 
 class SignalModel:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, aug_params: dict = None):
         self.config = config
         self.model_config = self.config["model"]
+        self.classes = self.config["classes"]
+        self.aug_params = aug_params
         self._model = self.init_model()
         self._train_transform = self.init_transform(train=True)
         self._val_transform = self.init_transform(train=False)
@@ -58,14 +72,7 @@ class SignalModel:
     def init_transform(self, train:bool) -> Callable:
 
         def transform(x):
-            x = np.swapaxes(x, 1, 2)
-
-
-            x = x / np.max(np.abs(x))
-            # x = (x - np.mean(x)) / np.std(x)
-            if train:
-                x = tsaug.AddNoise(scale=0.1).augment(x)
-            return np.swapaxes(x, 1, 2)
+            return x
         return transform
 
     # def _evaluate(self, x: np.ndarray) -> np.ndarray:
@@ -118,27 +125,19 @@ class SklearnModel(SignalModel, ABC):
 
 class NeuroNet(SignalModel, ABC):
 
-    def __init__(self, config: dict, state_dict: dict = None,
-                 tensorboard: bool = False,
-                 fold: int = 1, k_folds: int = 1):
-        super().__init__(config)
-        self.tensorboard = tensorboard
-        # in case of CV, changing tensorboard files for better
-        if k_folds > 1:
-            self.fold = fold
-            self.k_folds = k_folds
-            self.writer = SummaryWriter(
-                comment=f"_{self.model_config['type']}_{self.config['eval_params']['batch_size']}_fold: "
-                        f"{self.fold}/{self.k_folds}")
-        else:
-            self.writer = SummaryWriter(
-                comment=f"_{self.model_config['type']}_{self.config['eval_params']['batch_size']}")
+    def __init__(self, config: dict, aug_params: dict=None, state_dict: dict = None, metrics: bool = False):
+        super().__init__(config, aug_params)
+
+
+        self.metrics = metrics
+        self.writer = SummaryWriter(
+            comment=f"_{self.model_config['class']}_{self.config['training_params']['dataloader_params']['batch_size']}")
 
         self._model.to(DEVICE)
         if state_dict is not None:
             self._model.load_state_dict(state_dict)
 
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         self.best_model_dict = {}
 
         self.train_loss_list = []
@@ -146,9 +145,10 @@ class NeuroNet(SignalModel, ABC):
         self.val_loss = np.infty
         self.val_accuracy = []
 
+        self.best_loss = 1000
         self.total_batch_id = 1
         self.epoch_trained = 0
-
+        self.train: bool
         self.total_params = sum(p.numel() for p in self._model.parameters())
         self.trainable_params = sum(p.numel() for p in self._model.parameters() if p.requires_grad)
 
@@ -169,7 +169,7 @@ class NeuroNet(SignalModel, ABC):
 
     def init_model(self):
         self.load_layers()
-        match self.config["model"]["type"]:
+        match self.config["model"]["class"]:
             case "MLP":
                 return networks.MLP(self.layers_configs)
             case "Inception time" | "Inception" | "Inception_time":
@@ -182,46 +182,54 @@ class NeuroNet(SignalModel, ABC):
             case "LSTM-FCN" | "lstm_fcn":
                 return networks.RnnFcn(self.layers_configs)
             case "ResNet":
-                return networks.ResNet(num_classes=6)
+                return networks.ResNet(self.layers_configs, num_classes=6)
             case "EfficientNet":
-                return networks.EfficientNet(num_classes=6)
+                return networks.EfficientNet(self.layers_configs, num_classes=6)
 
-    # train and validation dataloader split for cases with kfold CV and without CV
-    def _train_val_dl_split(self, dataset: Dataset, train_idx, val_idx) -> (DataLoader, DataLoader):
-        if train_idx is not None:
-            traindl = DataLoader(dataset,
-                                 **self.config["training_params"].get("dataloader_params", {}),
-                                 sampler=torch.utils.data.SubsetRandomSampler(train_idx))
-            valdl = DataLoader(dataset,
-                               **self.config["eval_params"],
-                               sampler=torch.utils.data.SubsetRandomSampler(val_idx))
-        else:
-            train_ds, test_ds = random_split(dataset, [0.8889, 0.1111])     # 0.8889 out of 0.9 is ~ 0.8
-                                                                                    # so (train, val, test)
-                                                                                    #    (  0.8, 0.1, 0.1 ) splits
-            traindl = DataLoader(train_ds,
-                                 **self.config["training_params"].get("dataloader_params", {}),
-                                 shuffle=True)
 
-            valdl = DataLoader(test_ds,
-                               **self.config["eval_params"])
-        return traindl, valdl
+    def _init_optimizer(self, optimizer: str):
+        optimizer = optimizer.lower()
+        match optimizer:
+            case "sgd":
+                return optim.SGD(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+            case "adam":
+                return optim.Adam(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+            case "adamw":
+                return optim.AdamW(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+            case "rmsprop":
+                return optim.RMSprop(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
 
-    def train(self, train_dataset: Dataset, train_idx: list = None, val_idx: list = None) -> None:
+    def _init_scheduler(self, scheduler: str):
+        scheduler = scheduler.lower()
+        match scheduler:
+            case "cosineAnnealing"| "cosine" | "cosine_annealing":
+                return optim.lr_scheduler.CosineAnnealingLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                # T_max
+            case "exponential":
+                return optim.lr_scheduler.ExponentialLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                # gamma
+            case "cosineAnnealingWithRestarts" | "warmups" | "cosine_warmup" | "cosine_annealing_warmup":
+                return optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                # T_0
+            case "polynomial":
+                return optim.lr_scheduler.PolynomialLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                # power and total_iter
 
-        self.optimizer = optim.Adam(self._model.parameters(), lr=self.config["training_params"]["lr"])
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, T_0=1+self.config["training_params"]["epoch_num"]//2)
-                        #T_0=(1+(self.config["training_params"]["epoch_num"])//self.config["training_params"]["warmups"]))
 
-        train_dataloader, val_dataloader = self._train_val_dl_split(train_dataset, train_idx, val_idx)
+
+    def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader, config: dict = None, patience:int = 5) -> None:
+        if config is not None:
+            self.config = config
+        self.optimizer = self._init_optimizer(optimizer=self.config["training_params"]["optimizer_params"]["class"])
+        scheduler = self._init_scheduler(scheduler=self.config["training_params"]["scheduler_params"]["class"])
+
 
         epochs = trange(self.config["training_params"]["epoch_num"], ncols=100)  # , desc='Epoch #', leave=True)
         running_loss = 0
-
+        early_stopper = EarlyStopper(patience=patience)
 
 
         for epoch in epochs:
-            running_val_loss = 0
             self.train_one_epoch(train_dataloader, running_loss)
             self.validate(val_dataloader)
             epochs.set_description(f"Epoch #{self.epoch_trained + 1}")
@@ -229,19 +237,26 @@ class NeuroNet(SignalModel, ABC):
             last_lr = scheduler.get_last_lr()[0]  # get the last learning rate
             self.writer.add_scalar(tag='learning rate', scalar_value=last_lr, global_step=self.epoch_trained)
             scheduler.step()
-            self.epoch_trained += 1
+
+            if early_stopper.early_stop(self.val_loss):
+                print(f"Training stopped due to early stopping. Last epoch: {self.epoch_trained}")
+                break
         self.writer.close()
+        print(f"Best loss achieved at epoch {self.best_epoch}")
 
     def train_one_epoch(self, train_dataloader, running_loss):
-
-        for i, (inputs, targets) in enumerate(train_dataloader):
+        outputs = torch.empty(size=(0, 6), dtype=torch.float32, device=DEVICE).flatten()
+        targets = torch.empty(size=(0, 1), dtype=torch.long, device=DEVICE).flatten()
+        for i, (input, target) in enumerate(train_dataloader):
             self._model.train()
-            inputs = torch.from_numpy(self._train_transform(inputs.numpy()))
-            inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
+            input = torch.from_numpy(self._train_transform(input.numpy()))
+            input, target = input.to(DEVICE), target.to(DEVICE)
             self.optimizer.zero_grad()
 
-            outputs = self._model(inputs)
-            loss = self.criterion(outputs, targets)
+            output = self._model(input)
+            outputs = torch.cat((outputs, output), dim=0)
+            targets = torch.cat((targets, target), dim=0)
+            loss = self.criterion(output, target)
             loss.backward()
             self.optimizer.step()
 
@@ -249,68 +264,42 @@ class NeuroNet(SignalModel, ABC):
             if (i + 1) % 50 == 0:
                 avg_loss = running_loss / 50
                 self.train_loss_list.append(avg_loss)
-                self.writer.add_scalar(tag=f'Loss/train', scalar_value=avg_loss, global_step=self.total_batch_id)
+                self.writer.add_scalar(tag=f'Train_loss', scalar_value=avg_loss, global_step=self.total_batch_id)
                 running_loss = 0
 
             self.total_batch_id += 1
-
+        self.epoch_trained += 1
+        if self.metrics:
+            self._model.eval()
+            with torch.no_grad():
+                self.calculate_metrics(outputs, targets, tag="train")
     # VALIDATION
     def validate(self, val_dataloader: DataLoader):
         self._model.eval()
+        num_batches = len(val_dataloader)
         with torch.no_grad():
             # concatenation of tensors is faster than extending lists
-            outputs = torch.empty(size=(0, 6), dtype=torch.float32, device=DEVICE)
+            outputs = torch.empty(size=(0, 6), dtype=torch.float32, device=DEVICE).flatten()
             targets = torch.empty(size=(0, 1), dtype=torch.long, device=DEVICE).flatten()
+            running_loss = 0.0
             for i, (input, target) in enumerate(val_dataloader):
-                input = torch.from_numpy(self._val_transform(input.numpy()))
                 input, target = input.to(DEVICE), target.to(DEVICE)
                 output = self._model(input)
+                running_loss += self.criterion(output, target).item()
                 outputs = torch.cat((outputs, output), dim=0)
                 targets = torch.cat((targets, target), dim=0)
-            if self.tensorboard:
-                self.calculate_metrics(outputs, targets)
 
-            new_val_loss = float(self.criterion(outputs, targets).cpu().numpy())
-            if new_val_loss < self.val_loss:
+            if self.metrics:
+                self.calculate_metrics(outputs, targets, tag="val")
+            new_val_loss = running_loss/ num_batches
+            if new_val_loss < self.best_loss:
                 self.best_model_dict = self._model.state_dict()
+                self.best_epoch = self.epoch_trained + 1
+                self.best_loss = new_val_loss
 
             self.val_loss_list.append(new_val_loss)
-            self.writer.add_scalar(tag=f'Loss/val', scalar_value=new_val_loss, global_step=self.total_batch_id)
+            self.writer.add_scalars(main_tag=f'Loss', tag_scalar_dict={"val": new_val_loss, "train": self.train_loss_list[-1]}, global_step=self.total_batch_id)
             self.val_loss = new_val_loss
-
-    def calculate_metrics(self, outputs, targets) -> None:
-
-        classes = ["IL", "CD", "EL", "CL", "OS", "N"] #  TODO: FROM YAML
-        outputs, targets = np.asarray(outputs.cpu()), np.asarray(targets.cpu())
-        predictions = np.argmax(outputs, axis=1)
-
-        # CONFUSION MATRIX PLOT
-        plt.figure(figsize=(10, 6))
-        cm = confusion_matrix(targets, predictions, labels=np.arange(len(classes)))
-        df_cm = pd.DataFrame(cm / np.sum(cm, axis=1)[:, None], index=[i for i in range(len(classes))],
-                             columns=[i for i in range(len(classes))])
-        sns_cm = sns.heatmap(df_cm, annot=True, xticklabels=classes, yticklabels=classes, fmt=".1f")
-
-        self.writer.add_figure(tag=f"Confusion matrix/val",
-                               figure=sns_cm.get_figure(),
-                               global_step=self.total_batch_id)
-
-        # F1-SCORE
-        cr = classification_report(targets, predictions,
-                                   labels=np.arange(len(classes)),
-                                   output_dict=True,
-                                   zero_division=0)
-
-        self.writer.add_scalar(tag=f'F1-score',
-                               scalar_value=cr["macro avg"]["f1-score"],
-                               global_step=self.total_batch_id)
-
-        # ACCURACY
-        accuracy = accuracy_score(predictions, targets)
-        self.val_accuracy.append(accuracy)
-        self.writer.add_scalar(tag=f'Accuracy/val',
-                               scalar_value=accuracy,
-                               global_step=self.total_batch_id)
 
     def predict(self, x: np.ndarray, argmax=True) -> np.ndarray:
         self._model.eval()
@@ -328,4 +317,47 @@ class NeuroNet(SignalModel, ABC):
                 return torch.softmax(output, dim=1).cpu().numpy()
 
     def save(self, path: str) -> None:
-        torch.save(self._model, path)
+        torch.save(self.state_dict(), path)
+
+    def calculate_metrics(self, outputs, targets, tag:str) -> None:
+        outputs, targets = np.asarray(outputs.cpu()), np.asarray(targets.cpu())
+        predictions = np.argmax(outputs, axis=1)
+
+        # CONFUSION MATRIX PLOT
+        plt.figure(figsize=(10, 6))
+        cm = confusion_matrix(targets, predictions, labels=np.arange(len(self.classes)))
+        df_cm = pd.DataFrame(cm / np.sum(cm, axis=1)[:, None], index=[i for i in range(len(self.classes))],
+                             columns=[i for i in range(len(self.classes))])
+        sns_cm = sns.heatmap(df_cm, annot=True, xticklabels=self.classes, yticklabels=self.classes, fmt=".1f")
+
+        self.writer.add_figure(tag=f"Confusion matrix/{tag}",
+                               figure=sns_cm.get_figure(),
+                               global_step=self.total_batch_id)
+
+        # F1-SCORE
+        cr = classification_report(targets, predictions,
+                                   labels=np.arange(len(self.classes)),
+                                   output_dict=True,
+                                   zero_division=0)
+
+        self.writer.add_scalar(tag=f'F1-score/{tag}',
+                               scalar_value=cr["weighted avg"]["f1-score"],
+                               global_step=self.total_batch_id)
+
+        self.writer.add_scalar(tag=f'Precision/{tag}',
+                               scalar_value=cr["weighted avg"]["precision"],
+                               global_step=self.total_batch_id)
+
+        self.writer.add_scalar(tag=f'Recall/{tag}',
+                               scalar_value=cr["weighted avg"]["recall"],
+                               global_step=self.total_batch_id)
+
+
+        # ACCURACY
+        accuracy = accuracy_score(predictions, targets)
+
+        self.writer.add_scalar(tag=f'Accuracy/{tag}',
+                               scalar_value=accuracy,
+                               global_step=self.total_batch_id)
+        if tag == "val":
+            self.val_accuracy.append(accuracy)
