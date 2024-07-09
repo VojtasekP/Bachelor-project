@@ -1,38 +1,48 @@
 
 
 model:
-  type: MLP
+  class: MLP
   kwargs:
     layers:
         - name: Linear
           kwargs:
-            in_features: 1000
-            out_features: 2000
+            in_features: 10000
+            out_features: 5000
           id: linear1
         - name: Relu
         - name: Linear
           kwargs:
-            in_features: 2000
-            out_features: 500
+            in_features: 5000
+            out_features: 1000
           id: linear2
         - name: Relu
         - name: Linear
           kwargs:
-            in_features: 500
+            in_features: 1000
             out_features: 6
           id: linear3
         - name: Flatten
 
-tensorboard_log_frequency:
-  validation_loss: 256
-  accuracy: 256
-  confusion_matrix: 256
+classes:
+  0: Inadequate Lubrication
+  1: Corrosion Damage
+  2: Exceeding Life
+  3: Contaminated Lubricant
+  4: Overload Stress
+  5: New
 
 training_params:
-  lr: 0.001
-  epoch_num: 5
+  epoch_num: 20
   dataloader_params:
-    batch_size: 256
+    batch_size: 128
+  optimizer_params:
+    class: adam
+    kwargs:
+      lr: 0.001
+  scheduler_params:
+    class: cosine
+    kwargs:
+      T_max: 20
 
 eval_params:
   batch_size: 256

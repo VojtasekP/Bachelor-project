@@ -1,50 +1,78 @@
 
-
-
 model:
-  type: LSTM
+  class: LSTM
   kwargs:
     layers:
+      bn_config:
+        - name: batchnorm1d
+          kwargs:
+            num_features: 1
+          id: bn
+        - name: adaptiveavgpool1d
+          kwargs:
+            output_size: 15000
+          id: adaptivepool
+
       lstm_config:
         - name: LSTM
           kwargs:
-            input_size: 8500
-            hidden_size: 512
-            num_layers: 2
+            input_size: 50
+            hidden_size: 84
+            num_layers: 3
             batch_first: True
+            dropout: 0.39
             bidirectional: True
           id: lstm
       output_config:
+
         - name: Linear
           kwargs:
-            in_features: 1024
-            out_features: 512
+            in_features: 168
+            out_features: 5
           id: linear1
         - name: dropout
           kwargs:
-            p: 0.2
+            p: 0.42
           id: dropout
+        - name: relu
+        - name: flatten
+        - name: Linear
+          kwargs:
+            in_features: 1500
+            out_features: 100
+          id: linear2
         - name: relu
         - name: Linear
           kwargs:
-            in_features: 512
+            in_features: 100
             out_features: 6
           id: linear2
 
-tensorboard_log_frequency:
-  validation_loss: 256
-  accuracy: 256
-  confusion_matrix: 256
+# use acronyms
+classes:
+  - IL  # Inadecuate lubrication
+  - CD  # Corosion damage
+  - EL  # Exceeding life
+  - CL  # Contaminated lubricant
+  - OS  # Overload Stress
+  - NEW  # New bearing
 
 
 
 training_params:
-  lr: 0.0005
-  epoch_num: 20
-  warmups: 1
+  epoch_num: 100
   dataloader_params:
-    batch_size: 64
+    batch_size: 512
+  optimizer_params:
+    class: adamw
+    kwargs:
+      lr: 0.001398
+      weight_decay: 0.098
+  scheduler_params:
+    class: cosine
+    kwargs:
+      T_max: 100
 
 eval_params:
-  batch_size: 256
+  batch_size: 512
 

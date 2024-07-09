@@ -1,26 +1,46 @@
 model:
-  type: EfficientNet
+  class: EfficientNet
   kwargs:
-    layers: [2, 2, 2, 2]
+    layers:
+      - name: Batchnorm1d
+        kwargs:
+          num_features: 1
+        id: bn1
+      - name: spectrogram
+        kwargs:
+          n_fft: 512
+        id: spectrogram
+      # only layers before efficientnet
+
     num_classes: 6
     groups: 1
     width_per_group: 64
     block:
 
 
-tensorboard_log_frequency:
-  validation_loss: 128
-  accuracy: 128
-  confusion_matrix: 128
+classes:
+  0: Inadequate Lubrication
+  1: Corrosion Damage
+  2: Exceeding Life
+  3: Contaminated Lubricant
+  4: Overload Stress
+  5: New
 
 
 
 training_params:
-  lr: 0.01
-  epoch_num: 20
-  warmups: 1
+  epoch_num: 16
+
   dataloader_params:
-    batch_size: 64
+    batch_size: 128
+  optimizer_params:
+    class: adam
+    kwargs:
+      lr: 0.01
+  scheduler_params:
+    class: exponential
+    kwargs:
+      gamma: 0.8
 
 
 eval_params:

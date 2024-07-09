@@ -6,47 +6,42 @@ model:
       - name: Batchnorm1d
         kwargs:
           num_features: 1
-      - name: adaptiveavgpool1d
-        kwargs:
-          output_size: 4000
-        id: adaptpool1
+
       - name: InceptionBlock
         kwargs:
           in_channels: 1
-          bottleneck_channels: 6
-          n_filters: 4
-          kernel_sizes: [35, 65, 95]
+          bottleneck_channels: 12
+          n_filters: 8
+          kernel_sizes: [13, 31, 61]
           use_residual: True
         id: inceptionblock1
 
       - name: InceptionBlock
         kwargs:
           in_channels: 16 # n_filters x 4
-          bottleneck_channels: 6
-          n_filters: 4
-          kernel_sizes: [35, 65, 95]
+          bottleneck_channels: 3
+          n_filters: 9
+          kernel_sizes: [13, 23, 59]
           use_residual: True
         id: inceptionblock2
 
-      - name: adaptiveavgpool1d
+      - name: AdaptiveAvgPool1d
         kwargs:
-          output_size: 100
-        id: adaptpool2
+          output_size: 11
+        id: adaptivepool
       - name: Flatten
         kwargs:
           start_dim: 1
       - name: Linear
         kwargs:
-          in_features: 1600 # outputsize of adaptivep x n_filters x 4
-          out_features: 120
+          in_features: 311 # outputsize of adaptivep x n_filters x 4
+          out_features: 64
         id: linear1
-      - name: dropout
-        kwargs:
-          p: 0.3424
+
       - name: relu
       - name: Linear
         kwargs:
-          in_features: 120
+          in_features: 64
           out_features: 6
         id: linear2
 
@@ -61,25 +56,24 @@ classes:
 
 
 training_params:
-  epoch_num: 200
+  epoch_num: 13
 
   dataloader_params:
-    batch_size: 512
+    batch_size: 128
 
   optimizer_params:
     class: adamw
     kwargs:
-      lr: 0.00145
-      weight_decay: 0.073
+      lr: 0.001445
   scheduler_params:
-    class: cosine
+    class: warmups
     kwargs:
-      T_max: 200
+      T_0: 6
 
 
 
 eval_params:
-  batch_size: 512
+  batch_size: 256
 
 
 

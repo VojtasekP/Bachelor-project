@@ -1,59 +1,97 @@
 model:
-  type: lstm_fcn
+  class: lstm_fcn
   attention: False
   kwargs:
     in_channels: 1
     layers:
+      batchnorm_config:
+        - name: batchnorm1d
+          kwargs:
+            num_features: 1
+        - name: avgpool1d
+          kwargs:
+            kernel_size: 40
+
+
       lstm_config:
         - name: LSTM
           kwargs:
-            input_size: 1000
+            input_size: 500
             hidden_size: 512
             num_layers: 2
             batch_first: True
+            dropout: 0
             bidirectional: True
           id: lstm
+
       fcn_config:
         - name: Conv1d
           kwargs:
             in_channels: 1
-            out_channels: 8
-            kernel_size: 15
+            out_channels: 6
+            kernel_size: 14
+            bias: False
           id: conv1
         - name: BatchNorm1d
           kwargs:
-            num_features: 8
-          id: bn
+            num_features: 6
+          id: bn1
         - name: Relu
+        - name: avgpool1d
+          kwargs:
+            kernel_size: 4
+          id: avgpool1
         - name: Conv1d
           kwargs:
-            in_channels: 8
-            out_channels: 8
-            kernel_size: 31
+            in_channels: 6
+            out_channels: 16
+            kernel_size: 14
+            bias: False
           id: conv2
         - name: BatchNorm1d
           kwargs:
-            num_features: 8
+            num_features: 16
           id: bn2
         - name: Relu
         - name: AvgPool1d
           kwargs:
-            kernel_size: 12
+            kernel_size: 4
+          id: avgpool2
+        - name: Conv1d
+          kwargs:
+            in_channels: 16
+            out_channels: 16
+            kernel_size: 14
+            bias: False
+          id: conv3
+        - name: BatchNorm1d
+          kwargs:
+            num_features: 16
+          id: bn3
+        - name: Relu
+        - name: adaptiveavgpool1d
+          kwargs:
+            output_size: 64
+
+
 
       output_config:
         - name: Linear
           kwargs:
-            in_features: 1656
+            in_features: 2048
             out_features: 512
           id: linear1
         - name: Dropout
           kwargs:
             p: 0.2
+          id: dropout
         - name: relu
         - name: Linear
           kwargs:
             in_features: 512
             out_features: 6
+          id: linear2
+
 
 
 
@@ -65,19 +103,23 @@ classes:
   4: Overload Stress
   5: New
 
-# number of batches you write down validation loss, confusion_matrix, etc.
-tensorboard_log_frequency:
-  validation_loss: 128
-  accuracy: 128
-  confusion_matrix: 128
 
 training_params:
-  lr: 0.0024
-  epoch_num: 20
-  warmups: 1
+  epoch_num: 51
   dataloader_params:
-    batch_size: 64
+    batch_size: 256
+  optimizer_params:
+    class: adam
+    kwargs:
+      lr: 0.0005
+      weight_decay: 0.01
+  scheduler_params:
+    class: cosine
+    kwargs:
+      T_max: 50
+
+
 
 eval_params:
-  batch_size: 64
+  batch_size: 256
 

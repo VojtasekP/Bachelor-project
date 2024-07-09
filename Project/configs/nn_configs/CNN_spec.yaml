@@ -1,6 +1,6 @@
 
 model:
-  type: CNN_spec
+  class: CNN_spec
   kwargs:
     layers:
       # spectrogram
@@ -102,19 +102,27 @@ model:
         id: linear2
 
 
-tensorboard_log_frequency:
-  validation_loss: 128
-  accuracy: 128
-  confusion_matrix: 128
-
-
+classes:
+  - IL  # Inadecuate lubrication
+  - CD  # Corosion damage
+  - EL  # Exceeding life
+  - CL  # Contaminated lubricant
+  - OS  # Overload Stress
+  - NEW  # New bearing
 
 training_params:
-  lr: 0.01
-  epoch_num: 20
-  warmups: 1
+  epoch_num: 16
+
   dataloader_params:
-    batch_size: 64
+    batch_size: 128
+  optimizer_params:
+    class: adam
+    kwargs:
+      lr: 0.01
+  scheduler_params:
+    class: exponential
+    kwargs:
+      gamma: 0.8
 
 
 eval_params:
