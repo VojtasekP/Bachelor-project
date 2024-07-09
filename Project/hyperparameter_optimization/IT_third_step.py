@@ -5,16 +5,20 @@ import torch
 from ray.air import CheckpointConfig
 from ray.tune.search.hebo import HEBOSearch
 from torch import optim
+from torch.utils.data import DataLoader
+
 from dataset.signal_dataset import SignalDataset
 from ray.tune.search.optuna import OptunaSearch
 from ray import train, tune
 from functools import partial
 from ray.tune.schedulers import ASHAScheduler
-from signal_model import NeuroNet, load_yaml
+from signal_model import NeuroNet, EarlyStopper
 from pathlib import Path
 import torch.optim
-
-
+import yaml
+def load_yaml(config_path: Path):
+    with config_path.open(mode="r") as yaml_file:
+        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
     layers_configs = nn_config["model"]["kwargs"]["layers"]
     if isinstance(layers_configs, list):
@@ -29,60 +33,65 @@ def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
                     layer["kwargs"][arg] = value
 
 # test_set = SignalDataset(step=10000, window_size=1000, bin_setup=test_config, source_dtype="float32")
-def train_network(config, train_config, test_config):
+def train_network(config):
 
+    sample_rate = 1562500
+    signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
+    train_config = [{"label": (int(i.stem) - 1) // 4,
+                     "channels": len(list(i.glob('*ch2.bin'))),
+                     "interval": [0, int(4 * sample_rate)],
+                     "bin_path": list(i.glob('*ch2.bin'))[0]}
+                    for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
 
-    train_set = SignalDataset(step=15000, window_size=5000, bin_setup=train_config, source_dtype="float32")
+    val_config = [{"label": (int(i.stem) - 1) // 4,
+                     "channels": len(list(i.glob('*ch2.bin'))),
+                     "interval": [int(4 * sample_rate), int(4.5 * sample_rate)],
+                     "bin_path": list(i.glob('*ch2.bin'))[0]}
+                    for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
 
-    # nn_config["training_params"]["lr"] = config["lr"]
-    # nn_config["training_params"]["epoch_num"] = config["epoch_num"]
+    nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/configs/nn_configs/" + network + ".yaml"))
 
+    train_set = SignalDataset(step=10000, window_size=5000, bin_setup=train_config, source_dtype="float32")
+    val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
+    neuro_net = NeuroNet(config=nn_config, metrics=True)
+
+    update_layer_argument(nn_config, "adaptpool1", "output_size", config["adaptivepool1"])
     update_layer_argument(nn_config, "inceptionblock1", arg="n_filters",
-                          value=config["inceptionblock1"]["n_filters"])
+                          value=config["inceptionblock"]["n_filters"])
 
     update_layer_argument(nn_config, "inceptionblock1", arg="bottleneck_channels",
-                          value=config["inceptionblock1"]["bottleneck_channels"])
+                          value=config["inceptionblock"]["bottleneck_channels"])
 
 
     update_layer_argument(nn_config, "inceptionblock2", arg="in_channels",
-                          value=4*(config["inceptionblock1"]["n_filters"]))
+                          value=4*(config["inceptionblock"]["n_filters"]))
 
     update_layer_argument(nn_config, "inceptionblock2", arg="n_filters",
-                          value=config["inceptionblock2"]["n_filters"])
+                          value=config["inceptionblock"]["n_filters"])
 
     update_layer_argument(nn_config, "inceptionblock2", arg="bottleneck_channels",
-                          value=config["inceptionblock2"]["bottleneck_channels"])
+                          value=config["inceptionblock"]["bottleneck_channels"])
 
 
-    update_layer_argument(nn_config, "adaptivepool", arg="output_size", value=config["adaptivepool"])
+    update_layer_argument(nn_config, "adaptpool2", arg="output_size", value=config["adaptivepool2"])
     update_layer_argument(nn_config, "linear1", arg="in_features",
-                          value=(4*config["inceptionblock2"]["n_filters"]*config["adaptivepool"]))
+                          value=(4*config["inceptionblock"]["n_filters"]*config["adaptivepool2"]))
     update_layer_argument(nn_config, "linear1", arg="out_features", value=config["linear1"])
     update_layer_argument(nn_config, "linear2", arg="in_features", value=config["linear1"])
 
 
-    neuro_net = NeuroNet(config=nn_config, tensorboard=True)
+    neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(),
+                                     **neuro_net.config["training_params"]["optimizer_params"].get("kwargs", {}))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer,
+                                                           T_max=nn_config["training_params"]["epoch_num"])
 
-    neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=neuro_net.config["training_params"]["lr"])
-    scheduler = (
-        torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer, T_max= nn_config["training_params"]["epoch_num"]))
+    train_dl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True,
+                         pin_memory=True)
 
-    train_dl, val_dl = neuro_net._train_val_dl_split(train_set, train_idx=None, val_idx=None)
-
-    # checkpoint = get_checkpoint()
-    # if checkpoint:
-    #     with checkpoint.as_directory() as checkpoint_dir:
-    #         data_path = Path(checkpoint_dir) / "data.pkl"
-    #         with open(data_path, "rb") as fp:
-    #             checkpoint_state = pickle.load(fp)
-    #         start_epoch = checkpoint_state["epoch"]
-    #         neuro_net._model.load_state_dict(checkpoint_state["net_state_dict"])
-    #         neuro_net.optimizer.load_state_dict(checkpoint_state["optimizer_state_dict"])
-    # else:
-    #     start_epoch = 0
+    val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
     start_epoch = 0
     running_loss = 0.0
-
+    early_stopper = EarlyStopper(patience=15)
 
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
 
@@ -97,12 +106,7 @@ def train_network(config, train_config, test_config):
         }
         train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
                      "lr": scheduler.get_last_lr()[0]})
-    # with tempfile.TemporaryDirectory() as checkpoint_dir:
-    #     data_path = Path(checkpoint_dir) / "data.pkl"
-    #     with open(data_path, "wb") as fp:
-    #         pickle.dump(checkpoint_data, fp)
-    #     checkpoint = Checkpoint.from_directory(checkpoint_dir)
-    #     train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1]}, checkpoint=checkpoint)
+
 
 
 
@@ -110,43 +114,23 @@ loaded_signal = []
 sample_rate = 1562500
 channel = 'ch2'
 signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
-train_config = [{"label": (int(i.stem)-1)//4,
-              "channels": len(list(i.glob('*' + channel + '.bin'))),
-              "interval": [0, int(4.5*sample_rate)],
-              "bin_path": list(i.glob('*' + channel + '.bin'))[0]}
-             for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
-test_config = [{"label": (int(i.stem)-1)//4,
-              "channels": len(list(i.glob('*' + channel + '.bin'))),
-              "interval": [int(4.5*sample_rate), 5*sample_rate],
-              "bin_path": list(i.glob('*' + channel + '.bin'))[0]}
-             for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
 
-
-
-config = {
-    "inceptionblock1": {
-        "n_filters": tune.randint(2, 15),
-        "bottleneck_channels": tune.randint(15, 20),
-        # "kernel_sizes": [tune.choice([2*i+1 for i in range(7, 15)]),
-        #                  tune.choice([2*i+1 for i in range(25, 45)]),
-        #                  tune.choice([2*i+1 for i in range(45, 80)])]
-    },
-    "inceptionblock2": {
-        "n_filters": tune.randint(25, 35),
-        "bottleneck_channels": tune.randint(40, 50),
-        # "kernel_sizes": [tune.choice([2 * i + 1 for i in range(7, 15)]),
-        #                  tune.choice([2 * i + 1 for i in range(25, 45)]),
-        #                  tune.choice([2 * i + 1 for i in range(45, 80)])]
-    },
-    "adaptivepool": tune.randint(14, 20),
-    "linear1": tune.randint(32, 256)
-    # "epoch_num": tune.choice([10, 15, 20])
+config_second = {
+    "adaptivepool1": tune.choice([400, 1000, 2000, 2500, 4000, 5000]),
+    "inceptionblock": {
+        "n_filters": tune.qrandint(2, 20, 2),
+        "bottleneck_channels": tune.qrandint(2, 26, 2),
+        "kernel_sizes": [tune.choice([2 * i + 1 for i in range(5, 23)]),
+                          tune.choice([2 * i + 1 for i in range(25, 60)]),
+                          tune.choice([2 * i + 1 for i in range(60, 100)])]},
+    "adaptivepool2": tune.randint(5, 18),
+    "linear1": tune.randint(32, 1000)
 }
 
 network = "InceptionTime"
 nn_config = load_yaml(Path("../configs/nn_configs/" + network + ".yaml"))
 hebo = HEBOSearch(metric="accuracy", mode="max")
-# hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
+hebo.restore("/mnt/home2/hparams_checkpoints/third_step_2_-IT/searcher-state-2024-07-03_08-22-10.pkl")
 
 optuna_search = OptunaSearch(
     metric="accuracy",
@@ -156,20 +140,18 @@ asha_scheduler = ASHAScheduler(
     time_attr='training_iteration',
     metric='accuracy',
     mode='max',
-    max_t=7,
-    grace_period=3,
-    reduction_factor=3
+    max_t=51,
+    grace_period=15,
 )
  # ②
 result = tune.run(
-    partial(train_network, train_config=train_config, test_config=test_config),
+    partial(train_network),
     resources_per_trial={"cpu": 10, "gpu": 1},
-    name="third_step-IT",
-    num_samples=50,
-    checkpoint_config=CheckpointConfig(num_to_keep=5),
+    name="third_step_2_-IT",
+    num_samples=100,
     search_alg=hebo,
     storage_path="/mnt/home2/hparams_checkpoints/",
-    config=config,
+    # config=config_second,
     scheduler=asha_scheduler,
     verbose=1,
 )

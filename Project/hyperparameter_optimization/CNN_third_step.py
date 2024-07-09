@@ -5,15 +5,20 @@ import torch
 from ray.air import CheckpointConfig
 from ray.tune.search.hebo import HEBOSearch
 from torch import optim
+from torch.utils.data import DataLoader
+
 from dataset.signal_dataset import SignalDataset
 from ray.tune.search.optuna import OptunaSearch
 from ray import train, tune
 from functools import partial
 from ray.tune.schedulers import ASHAScheduler
-from signal_model import NeuroNet, load_yaml
+from signal_model import NeuroNet, EarlyStopper
 from pathlib import Path
 import torch.optim
-
+import yaml
+def load_yaml(config_path: Path):
+    with config_path.open(mode="r") as yaml_file:
+        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 
 def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
     layers_configs = nn_config["model"]["kwargs"]["layers"]
@@ -34,10 +39,17 @@ def train_network(config):
     signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
     train_config = [{"label": (int(i.stem) - 1) // 4,
                      "channels": len(list(i.glob('*ch2.bin'))),
-                     "interval": [0, int(4.5 * sample_rate)],
+                     "interval": [0, int(4 * sample_rate)],
                      "bin_path": list(i.glob('*ch2.bin'))[0]}
                     for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
+    val_config = [{"label": (int(i.stem) - 1) // 4,
+                     "channels": len(list(i.glob('*ch2.bin'))),
+                     "interval": [int(4 * sample_rate), int(4.5 * sample_rate)],
+                     "bin_path": list(i.glob('*ch2.bin'))[0]}
+                    for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
+
     train_set = SignalDataset(step=10000, window_size=5000, bin_setup=train_config, source_dtype="float32")
+    val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
     update_layer_argument(nn_config, 'conv1', 'out_channels', config['first_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv1', 'kernel_size', config['first_conv']['kernel_size'])
     # update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
@@ -65,35 +77,27 @@ def train_network(config):
     #
     update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
     #
-    # update_layer_argument(nn_config, 'adaptivepool', 'output_size', config['adaptivepool'])
-    # update_layer_argument(nn_config, 'linear1', 'in_features', config['fourth_conv']["out_channels"]*(config['adaptivepool']**2))
+    update_layer_argument(nn_config, 'adaptivepool', 'output_size', config['adaptivepool'])
+    update_layer_argument(nn_config, 'linear1', 'in_features', int(config['fourth_conv']["out_channels"]*config['adaptivepool']))
     update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
     update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
     update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
+    print(nn_config)
+    neuro_net = NeuroNet(config=nn_config, metrics=True)
 
-    neuro_net = NeuroNet(config=nn_config, tensorboard=True)
+    neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(),
+                                     **neuro_net.config["training_params"]["optimizer_params"].get("kwargs", {}))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer,
+                                                           T_max=nn_config["training_params"]["epoch_num"])
 
-    neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=nn_config["training_params"]["lr"])
-    scheduler = (
-        torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(neuro_net.optimizer, T_0=(1+ nn_config["training_params"]["epoch_num"]//nn_config["training_params"]["warmups"])))
 
-    train_dl, val_dl = neuro_net._train_val_dl_split(train_set, train_idx=None, val_idx=None)
-
-    # checkpoint = get_checkpoint()
-    # if checkpoint:
-    #     with checkpoint.as_directory() as checkpoint_dir:
-    #         data_path = Path(checkpoint_dir) / "data.pkl"
-    #         with open(data_path, "rb") as fp:
-    #             checkpoint_state = pickle.load(fp)
-    #         start_epoch = checkpoint_state["epoch"]
-    #         neuro_net._model.load_state_dict(checkpoint_state["net_state_dict"])
-    #         neuro_net.optimizer.load_state_dict(checkpoint_state["optimizer_state_dict"])
-    # else:
-    #     start_epoch = 0
     start_epoch = 0
     running_loss = 0.0
+    train_dl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True,
+                         pin_memory=True)
 
-
+    val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
+    early_stopper = EarlyStopper(patience=15)
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
 
         neuro_net.train_one_epoch(train_dl, running_loss)
@@ -135,7 +139,7 @@ config = {
         "out_channels": tune.qrandint(32,256, 2),
         "kernel_size": tune.randint(2, 100),
     },
-    "adaptivepool": tune.randint(1, 10),
+    "adaptivepool": tune.qrandint(2, 100),
     "linear": tune.randint(50, 2000),
     "dropout": tune.uniform(0, 0.5),
 }
@@ -143,7 +147,7 @@ config = {
 
 
 network = "CNN"
-nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/nn_configs/" + network + ".yaml"))
+nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/configs/nn_configs/" + network + ".yaml"))
 hebo = HEBOSearch(metric="accuracy", mode="max")
 # hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
 
@@ -153,10 +157,10 @@ optuna_search = OptunaSearch(
 
 asha_scheduler = ASHAScheduler(
     time_attr='training_iteration',
-    metric='loss',
-    mode='min',
-    max_t=20,
-    grace_period=5,
+    metric='accuracy',
+    mode='max',
+    max_t=51,
+    grace_period=10,
 )
  # ②
 result = tune.run(
