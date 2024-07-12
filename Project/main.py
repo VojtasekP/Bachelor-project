@@ -45,7 +45,7 @@ def main(model, channel_train, channel_test):
     model_path = Path("configs/nn_configs/" + model + ".yaml")
     nn_config = load_yaml(model_path)
     neuro_net = NeuroNet(config=nn_config, metrics=True)
-    cutoff = sample_rate // 15
+    cutoff = (2000, sample_rate // 15)
     train_set = SignalDataset(step=5000, window_size=window_size, bin_setup=train_config, cutoff=cutoff, source_dtype="float32")
     val_set = SignalDataset(step=5000, window_size=window_size, bin_setup=validation_config,cutoff=cutoff, source_dtype="float32")
     test_set = SignalDataset(step=5000, window_size=window_size, bin_setup=test_config, cutoff=cutoff,source_dtype="float32")
@@ -58,11 +58,11 @@ def main(model, channel_train, channel_test):
     # neuro_net._model.load_state_dict(torch.load("trained_models/" + channel_train + "/InceptionTime.pt"))
     # TRAIN
     neuro_net.train(traindl, valdl, patience=12)
-    # save_path = "trained_models/" + channel_train + "/" + model +".pt"
+    save_path = "trained_models/" + channel_train + "/" + model +"more.pt"
     # neuro_net._model = torch.load(save_path)
     # print(neuro_net.val_loss_list)
     # print(neuro_net.trainable_params, neuro_net.total_params, save_path)
-    # neuro_net.save(save_path)
+    neuro_net.save(save_path)
 
     # EVALUATE ON TEST SET
     test_dataloader = DataLoader(test_set, batch_size=32, shuffle=False)
@@ -73,15 +73,16 @@ def main(model, channel_train, channel_test):
         output = neuro_net.predict(input, argmax=True)
         outputs = np.concatenate((outputs, output), axis=0)
         targets = np.concatenate((targets, target), axis=0)
+    cm_savepath = "/home/petr/Documents/graphs_for_BC/cm/"
     neuro_net.plot_confusion_matrix(outputs, targets)
 
 if __name__ == '__main__':
     channel_1 = 'ch1'
     channel_2 = 'ch2'
     channel_3 = 'ch3'
-    models = ["InceptionTime", "CNN", "LSTM"]
-    for channel in [channel_1, channel_2, channel_3]:
-        for model in models:
+    models = ["LSTM"]
+    for model in models:
+        for channel in [channel_1, channel_2, channel_3]:
             main(model, channel, channel)
 
 
