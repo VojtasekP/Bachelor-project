@@ -10,41 +10,30 @@ model:
           id: bn
         - name: adaptiveavgpool1d
           kwargs:
-            output_size: 15000
+            output_size: 5000
           id: adaptivepool
 
       lstm_config:
         - name: LSTM
           kwargs:
-            input_size: 50
-            hidden_size: 84
+            input_size: 100
+            hidden_size: 156
             num_layers: 3
             batch_first: True
-            dropout: 0.39
+            dropout: 0.4456
             bidirectional: True
           id: lstm
       output_config:
-
         - name: Linear
           kwargs:
-            in_features: 168
-            out_features: 5
+            in_features: 312
+            out_features: 19
           id: linear1
-        - name: dropout
-          kwargs:
-            p: 0.42
-          id: dropout
         - name: relu
         - name: flatten
         - name: Linear
           kwargs:
-            in_features: 1500
-            out_features: 100
-          id: linear2
-        - name: relu
-        - name: Linear
-          kwargs:
-            in_features: 100
+            in_features: 950
             out_features: 6
           id: linear2
 
@@ -60,19 +49,19 @@ classes:
 
 
 training_params:
-  epoch_num: 100
+  epoch_num: 80
   dataloader_params:
-    batch_size: 512
+    batch_size: 256
   optimizer_params:
     class: adamw
     kwargs:
-      lr: 0.001398
+      lr: 0.00309
       weight_decay: 0.098
   scheduler_params:
     class: cosine
     kwargs:
-      T_max: 100
+      T_max: 80
 
 eval_params:
-  batch_size: 512
+  batch_size: 256
 
