@@ -55,7 +55,7 @@ def train_network(config):
     val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
     neuro_net = NeuroNet(config=nn_config, metrics=True)
 
-    update_layer_argument(nn_config, "adaptpool1", "output_size", config["adaptivepool1"])
+    # update_layer_argument(nn_config, "adaptpool1", "output_size", config["adaptivepool1"])
     update_layer_argument(nn_config, "inceptionblock1", arg="n_filters",
                           value=config["inceptionblock"]["n_filters"])
 
@@ -76,6 +76,7 @@ def train_network(config):
     update_layer_argument(nn_config, "adaptpool2", arg="output_size", value=config["adaptivepool2"])
     update_layer_argument(nn_config, "linear1", arg="in_features",
                           value=(4*config["inceptionblock"]["n_filters"]*config["adaptivepool2"]))
+    update_layer_argument(nn_config, "dropout", "p", config["dropout"])
     update_layer_argument(nn_config, "linear1", arg="out_features", value=config["linear1"])
     update_layer_argument(nn_config, "linear2", arg="in_features", value=config["linear1"])
 
@@ -91,10 +92,9 @@ def train_network(config):
     val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
     start_epoch = 0
     running_loss = 0.0
-    early_stopper = EarlyStopper(patience=15)
-
+    best_acc = 0
+    early_stopper = EarlyStopper(patience=12)
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
-
         neuro_net.train_one_epoch(train_dl, running_loss)
         neuro_net.validate(val_dl)
         scheduler.step()
@@ -104,8 +104,19 @@ def train_network(config):
             "net_state_dict": neuro_net._model.state_dict(),
             "optimizer_state_dict": neuro_net.optimizer.state_dict(),
         }
-        train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
-                     "lr": scheduler.get_last_lr()[0]})
+        acc = neuro_net.val_accuracy[-1]
+        if acc > best_acc:
+            best_acc = acc
+        train.report({"loss": neuro_net.best_loss,
+                      "accuracy": acc,
+                      "lr": scheduler.get_last_lr()[0],
+                      "epoch_trained": epoch,
+                      "best_acc": best_acc})
+
+        if early_stopper.early_stop(neuro_net.val_loss):
+            print(f"Training stopped due to early stopping. Last epoch: {epoch}")
+            break
+
 
 
 
@@ -115,43 +126,44 @@ sample_rate = 1562500
 channel = 'ch2'
 signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
 
-config_second = {
-    "adaptivepool1": tune.choice([400, 1000, 2000, 2500, 4000, 5000]),
+config = {
+    # "adaptivepool1": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
     "inceptionblock": {
-        "n_filters": tune.qrandint(2, 20, 2),
-        "bottleneck_channels": tune.qrandint(2, 26, 2),
-        "kernel_sizes": [tune.choice([2 * i + 1 for i in range(5, 23)]),
-                          tune.choice([2 * i + 1 for i in range(25, 60)]),
-                          tune.choice([2 * i + 1 for i in range(60, 100)])]},
-    "adaptivepool2": tune.randint(5, 18),
+        "n_filters": tune.qrandint(2, 64, 2),
+        "bottleneck_channels": tune.qrandint(2, 64, 2),
+        "kernel_sizes": [tune.choice([10 * i + 1 for i in range(1, 10)]),
+                          tune.choice([10 * i + 1 for i in range(5, 20)]),
+                          tune.choice([10 * i + 1 for i in range(15, 40)])]},
+    "adaptivepool2": tune.randint(5, 200),
+    "dropout": tune.uniform(0, 0.5),
     "linear1": tune.randint(32, 1000)
 }
 
-network = "InceptionTime"
+network = "InceptionTime_old"
 nn_config = load_yaml(Path("../configs/nn_configs/" + network + ".yaml"))
-hebo = HEBOSearch(metric="accuracy", mode="max")
-hebo.restore("/mnt/home2/hparams_checkpoints/third_step_2_-IT/searcher-state-2024-07-03_08-22-10.pkl")
+hebo = HEBOSearch(metric="loss", mode="min")
+hebo.restore("/mnt/home2/hparams_checkpoints/SECSTEP-IT/searcher-state-2024-07-25_12-59-35.pkl")
 
 optuna_search = OptunaSearch(
-    metric="accuracy",
-    mode="max")
+    metric="loss",
+    mode="min")
 
 asha_scheduler = ASHAScheduler(
     time_attr='training_iteration',
-    metric='accuracy',
-    mode='max',
-    max_t=51,
-    grace_period=15,
+    metric='loss',
+    mode='min',
+    max_t=70,
+    grace_period=20,
 )
  # ②
 result = tune.run(
     partial(train_network),
     resources_per_trial={"cpu": 10, "gpu": 1},
-    name="third_step_2_-IT",
+    name="SECSTEP-IT",
     num_samples=100,
     search_alg=hebo,
     storage_path="/mnt/home2/hparams_checkpoints/",
-    # config=config_second,
+    # config=config,
     scheduler=asha_scheduler,
     verbose=1,
 )

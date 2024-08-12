@@ -52,7 +52,7 @@ def train_network(config):
     train_set = SignalDataset(step=10000, window_size=5000, bin_setup=train_config, source_dtype="float32")
     val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
 
-    update_layer_argument(nn_config, "adaptivepool", "output_size", value=config["adaptivepool"])
+    # update_layer_argument(nn_config, "adaptivepool", "output_size", value=config["adaptivepool"])
     update_layer_argument(nn_config, "lstm", "input_size", value=config["lstm"]["input_size"])
     update_layer_argument(nn_config, "lstm", arg="hidden_size", value=config["lstm"]["hidden_size"])
     update_layer_argument(nn_config, "lstm", arg="num_layers", value=config["lstm"]["num_layers"])
@@ -61,11 +61,14 @@ def train_network(config):
     if config["lstm"]["bidirectional"]:
         update_layer_argument(nn_config, "lstm", arg="bidirectional", value=True)
         update_layer_argument(nn_config, "linear1", arg="in_features", value=config["lstm"]["hidden_size"]*2)
+
     else:
         update_layer_argument(nn_config, "lstm", arg="bidirectional", value=False)
         update_layer_argument(nn_config, "linear1", arg="in_features", value=config["lstm"]["hidden_size"])
+
     update_layer_argument(nn_config, "linear1", arg="out_features", value=config["linear1"])
-    update_layer_argument(nn_config, "linear2", arg="in_features", value=int(config["linear1"]*(config["adaptivepool"]/config["lstm"]["input_size"])))
+    update_layer_argument(nn_config, "linear2", arg="in_features", value=int(
+        config["linear1"] * (5000 // config["lstm"]["input_size"])))
     update_layer_argument(nn_config, "dropout", arg="p", value=config["dropout"])
 
     neuro_net = NeuroNet(config=nn_config, metrics=True)
@@ -81,10 +84,9 @@ def train_network(config):
     val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
     start_epoch = 0
     running_loss = 0.0
-    early_stopper = EarlyStopper(patience=15)
-
+    best_acc = 0
+    early_stopper = EarlyStopper(patience=12)
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
-
         neuro_net.train_one_epoch(train_dl, running_loss)
         neuro_net.validate(val_dl)
         scheduler.step()
@@ -94,20 +96,24 @@ def train_network(config):
             "net_state_dict": neuro_net._model.state_dict(),
             "optimizer_state_dict": neuro_net.optimizer.state_dict(),
         }
-        train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
-                     "lr": scheduler.get_last_lr()[0]})
-
+        acc = neuro_net.val_accuracy[-1]
+        if acc > best_acc:
+            best_acc = acc
+        train.report({"loss": neuro_net.best_loss,
+                      "accuracy": acc,
+                      "lr": scheduler.get_last_lr()[0],
+                      "epoch_trained": epoch,
+                      "best_acc": best_acc})
 
         if early_stopper.early_stop(neuro_net.val_loss):
             print(f"Training stopped due to early stopping. Last epoch: {epoch}")
             break
 
-nn_config = load_yaml(Path("../configs/nn_configs/LSTM.yaml"))
 
 config = {
-    "adaptivepool": tune.choice([400, 1000, 2000, 2400, 2600]),
+    # "adaptivepool": tune.choice([500, 1000, 1250, 2000, 2500, ]),
     "lstm": {
-        "input_size": tune.choice([20, 40, 50, 100, 200]),
+        "input_size": tune.choice([10, 20, 25, 40, 50, 100, 125, 200]),
         "hidden_size": tune.randint(20,200),
         "num_layers": tune.choice([1, 2, 3, 4]),
         "bidirectional": tune.choice([True, False]),
@@ -116,30 +122,34 @@ config = {
     "dropout": tune.uniform(0, 0.5),
 }
 
-hebo = HEBOSearch(metric="accuracy", mode="max")
+
+nn_config = load_yaml(Path("../configs/nn_configs/LSTM.yaml"))
+hebo = HEBOSearch(metric="loss", mode="min")
 
 optuna_search = OptunaSearch(
-    metric="accuracy",
-    mode="max")
+    metric="loss",
+    mode="min")
 
 asha_scheduler = ASHAScheduler(
     time_attr='training_iteration',
-    metric='accuracy',
-    mode='max',
-    max_t=51,
-    grace_period=20
+    metric='loss',
+    mode='min',
+    max_t=40,
+    grace_period=10,
 )
  # ②
 result = tune.run(
     partial(train_network),
-    name="THIRD_STEP_LSTM_",
     resources_per_trial={"cpu": 10, "gpu": 1},
-    config=config,
-    num_samples=100,
+    name="SECSTEP-LSTM",
+    num_samples=150,
     search_alg=hebo,
+    storage_path="/mnt/home2/hparams_checkpoints/",
+    config=config,
     scheduler=asha_scheduler,
-    verbose=1
+    verbose=1,
 )
+
 
 best_trial = result.get_best_trial("accuracy", "max", "last")
 print(best_trial)

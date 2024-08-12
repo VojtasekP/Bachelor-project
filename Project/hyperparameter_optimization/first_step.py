@@ -57,19 +57,13 @@ def train_network(config, network):
     val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
     neuro_net = NeuroNet(config=nn_config, metrics=True)
 
-    match config["optimizer"]:
-        case "adam":
-            neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(), lr=config["lr"],
-                                             weight_decay=config["weight_decay"])
-        case "adamw":
-            neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=config["lr"],
-                                              weight_decay=config["weight_decay"])
-        case "rmsprop":
-            neuro_net.optimizer = optim.RMSprop(neuro_net._model.parameters(), lr=config["lr"],
-                                                weight_decay=config["weight_decay"])
+
+    # neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=config["lr"],
+    #                                   weight_decay=config["weight_decay"])
+    neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(), lr=nn_config["training_params"]["optimizer_params"]["kwargs"]["lr"])
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer,
-                                                     T_max=nn_config["training_params"]["epoch_num"])
+                                                     T_max=config["epoch_num"])
 
     train_dl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True,
                          pin_memory=True)
@@ -77,8 +71,9 @@ def train_network(config, network):
     val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
     start_epoch = 0
     running_loss = 0.0
-    early_stopper = EarlyStopper(patience=15)
-    for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
+    best_acc = 0
+    early_stopper = EarlyStopper(patience=12)
+    for epoch in range(start_epoch, config["epoch_num"]):
         neuro_net.train_one_epoch(train_dl, running_loss)
         neuro_net.validate(val_dl)
         scheduler.step()
@@ -88,8 +83,14 @@ def train_network(config, network):
             "net_state_dict": neuro_net._model.state_dict(),
             "optimizer_state_dict": neuro_net.optimizer.state_dict(),
         }
-        train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
-                      "lr": scheduler.get_last_lr()[0], "epoch_trained": epoch})
+        acc = neuro_net.val_accuracy[-1]
+        if acc > best_acc:
+            best_acc = acc
+        train.report({"loss": neuro_net.best_loss,
+                      "accuracy": acc,
+                      "lr": scheduler.get_last_lr()[0],
+                      "epoch_trained": epoch,
+                      "best_acc": best_acc})
 
         if early_stopper.early_stop(neuro_net.val_loss):
             print(f"Training stopped due to early stopping. Last epoch: {epoch}")
@@ -98,20 +99,22 @@ def train_network(config, network):
 
 config = {
     "lr": tune.uniform(1e-6, 1e-2),
-    "optimizer": tune.choice(["adam", "rmsprop", "adamw"]),
     "weight_decay": tune.uniform(1e-4, 1e-1),
 }
-
-nn_models = ["InceptionTime"]
+epochs_config = {
+    "epoch_num": tune.qrandint(1, 150, 10),
+}
+nn_models = ["InceptionTime", "CNN", "LSTM"]
 
 for network in nn_models:
-    hebo = HEBOSearch(metric="accuracy", mode="max")
-    iter = {"InceptionTime": 51, "LSTM": 51, "CNN": 51}
+    hebo = HEBOSearch(metric="loss", mode="min")
+    # hebo.restore("/mnt/home2/hparams_checkpoints/FIRST_STEP-InceptionTime_old/searcher-state-2024-07-22_21-14-35.pkl")
+    iter = {"InceptionTime": 100, "LSTM": 150, "CNN": 150}
     iter_min = {"InceptionTime": 20, "LSTM": 20, "CNN_spec": 20, "CNN": 20}
     asha_scheduler = ASHAScheduler(
         time_attr='training_iteration',
-        metric='accuracy',
-        mode='max',
+        metric='loss',
+        mode='min',
         max_t=iter[network],
         grace_period=iter_min[network]
     )
@@ -121,10 +124,10 @@ for network in nn_models:
         partial(train_network, network=network),
         name="FIRST_STEP-" + network,
         resources_per_trial={"cpu": 10, "gpu": 1},
-        num_samples=100,
+        num_samples=40,
         search_alg=hebo,
         scheduler=asha_scheduler,
-        config=config,
+        config=epochs_config,
         storage_path="/mnt/home2/hparams_checkpoints/",
         verbose=1,
     )

@@ -34,7 +34,7 @@ def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
                     layer["kwargs"][arg] = value
 
 # test_set = SignalDataset(step=10000, window_size=1000, bin_setup=test_config, source_dtype="float32")
-def train_network(config):
+def train_cnn(config):
     sample_rate = 1562500
     signal_data_dir = "/mnt/home2/Motor_project/AE_PETR_loziska/"
     train_config = [{"label": (int(i.stem) - 1) // 4,
@@ -52,28 +52,35 @@ def train_network(config):
     val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, source_dtype="float32")
     update_layer_argument(nn_config, 'conv1', 'out_channels', config['first_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv1', 'kernel_size', config['first_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
-    #
+    update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv1', 'dilation', config['dilation'])
+    update_layer_argument(nn_config, 'avgpool1', 'kernel_size', config['pool'])
+
+
     update_layer_argument(nn_config, 'bn1', 'num_features', config['first_conv']["out_channels"])
     #
     update_layer_argument(nn_config, 'conv2', 'in_channels', config['first_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv2', 'out_channels', config['second_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv2', 'kernel_size', config['second_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv2', 'padding', config['second_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv2', 'padding', config['second_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv2', 'dilation', config['dilation'])
+    update_layer_argument(nn_config, 'avgpool2', 'kernel_size', config['pool'])
     #
     update_layer_argument(nn_config, 'bn2', 'num_features', config['second_conv']["out_channels"])
     #
     update_layer_argument(nn_config, 'conv3', 'in_channels', config['second_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv3', 'out_channels', config['third_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv3', 'kernel_size', config['third_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv3', 'padding', config['third_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv3', 'padding', config['third_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv3', 'dilation', config['dilation'])
+    update_layer_argument(nn_config, 'avgpool3', 'kernel_size', config['pool'])
     #
     update_layer_argument(nn_config, 'bn3', 'num_features', config['third_conv']["out_channels"])
     #
     update_layer_argument(nn_config, 'conv4', 'in_channels', config['third_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv4', 'out_channels', config['fourth_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv4', 'kernel_size', config['fourth_conv']['kernel_size'])
-    # update_layer_argument(nn_config, 'conv4', 'padding', config['fourth_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'conv4', 'padding', config['fourth_conv']['kernel_size'] // 2)
     #
     update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
     #
@@ -82,7 +89,6 @@ def train_network(config):
     update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
     update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
     update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
-    print(nn_config)
     neuro_net = NeuroNet(config=nn_config, metrics=True)
 
     neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(),
@@ -97,9 +103,10 @@ def train_network(config):
                          pin_memory=True)
 
     val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
-    early_stopper = EarlyStopper(patience=15)
+    running_loss = 0.0
+    best_acc = 0
+    early_stopper = EarlyStopper(patience=12)
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
-
         neuro_net.train_one_epoch(train_dl, running_loss)
         neuro_net.validate(val_dl)
         scheduler.step()
@@ -109,46 +116,49 @@ def train_network(config):
             "net_state_dict": neuro_net._model.state_dict(),
             "optimizer_state_dict": neuro_net.optimizer.state_dict(),
         }
-        train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
-                     "lr": scheduler.get_last_lr()[0]})
-    # with tempfile.TemporaryDirectory() as checkpoint_dir:
-    #     data_path = Path(checkpoint_dir) / "data.pkl"
-    #     with open(data_path, "wb") as fp:
-    #         pickle.dump(checkpoint_data, fp)
-    #     checkpoint = Checkpoint.from_directory(checkpoint_dir)
-    #     train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1]}, checkpoint=checkpoint)
+        acc = neuro_net.val_accuracy[-1]
+        if acc > best_acc:
+            best_acc = acc
+        train.report({"loss": neuro_net.best_loss,
+                      "accuracy": acc,
+                      "lr": scheduler.get_last_lr()[0],
+                      "epoch_trained": epoch,
+                      "best_acc": best_acc})
 
-
-
+        if early_stopper.early_stop(neuro_net.val_loss):
+            print(f"Training stopped due to early stopping. Last epoch: {epoch}")
+            break
 
 
 config = {
+    "dilation": tune.randint(1, 20),
     "first_conv" :{
         "out_channels": tune.qrandint(2,32, 2),
-        "kernel_size": tune.randint(2,100),
+        "kernel_size": tune.randint(2,80),
     },
     "second_conv": {
         "out_channels": tune.qrandint(4,64, 2),
-        "kernel_size": tune.randint(2, 100),
+        "kernel_size": tune.randint(2, 80),
     },
     "third_conv": {
-        "out_channels": tune.qrandint(8,128, 2),
-        "kernel_size": tune.randint(2, 100),
+        "out_channels": tune.qrandint(8,64, 2),
+        "kernel_size": tune.randint(2, 80),
     },
     "fourth_conv": {
-        "out_channels": tune.qrandint(32,256, 2),
-        "kernel_size": tune.randint(2, 100),
+        "out_channels": tune.qrandint(8,64, 2),
+        "kernel_size": tune.randint(2, 80),
     },
-    "adaptivepool": tune.qrandint(2, 100),
-    "linear": tune.randint(50, 2000),
+    "pool": tune.randint(1, 5),
+    "adaptivepool": tune.qrandint(10, 200),
     "dropout": tune.uniform(0, 0.5),
+    "linear": tune.randint(5, 1000),
 }
 
 
 
-network = "CNN"
+network = "CNN_old"
 nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/configs/nn_configs/" + network + ".yaml"))
-hebo = HEBOSearch(metric="accuracy", mode="max")
+hebo = HEBOSearch(metric="loss", mode="min")
 # hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
 
 optuna_search = OptunaSearch(
@@ -157,17 +167,17 @@ optuna_search = OptunaSearch(
 
 asha_scheduler = ASHAScheduler(
     time_attr='training_iteration',
-    metric='accuracy',
-    mode='max',
-    max_t=51,
+    metric='loss',
+    mode='min',
+    max_t=50,
     grace_period=10,
 )
  # ②
 result = tune.run(
-    partial(train_network),
+    partial(train_cnn),
+    name="SECSTEP-CNN",
     resources_per_trial={"cpu": 10, "gpu": 1},
-    num_samples=100,
-    checkpoint_config=CheckpointConfig(num_to_keep=5),
+    num_samples=150,
     search_alg=hebo,
     config=config,
     scheduler=asha_scheduler,
@@ -182,11 +192,3 @@ print(f"Best trial validation loss: {best_trial.last_result['loss']}")
 
 print(f"Best trial config: {best_trial.config}")
 
-# │ adaptivepool                                 10 │
-# │ batch_size                                  256 │
-# │ inceptionblock1/bottleneck_channels           4 │
-# │ inceptionblock1/n_filters                    15 │
-# │ inceptionblock2/bottleneck_channels          47 │
-# │ inceptionblock2/n_filters                    20 │
-# │ linear1                                     305 │
-# │ lr                                      0.00251

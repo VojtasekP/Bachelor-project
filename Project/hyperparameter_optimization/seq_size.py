@@ -69,13 +69,44 @@ def train_network(config, network):
         # nn_config["model"]["kwargs"]["layers"]["lstm_config"][0]["kwargs"]["input_size"] = config["input_size"]
 
         # nn_config["model"]["kwargs"]["layers"]["output_config"][0]["kwargs"]["in_features"] = calculate_output_size(config["input_size"]) + 1024
-    if network == "CNN":
-        update_layer_argument(nn_config, "linear1", "in_features",
-                              value=int(64 * calculate_output_size(config["input_size"])))
+
     neuro_net = NeuroNet(config=nn_config, metrics=True)
 
-    # match network:
-    #     case "InceptionTime":
+
+    if network == "InceptionTime":
+        match config["input_size"]:
+            case 2500:
+                cutoff_freq = sample_rate//2
+            case 5000:
+                cutoff_freq = sample_rate // 10
+            case 10000:
+                cutoff_freq = sample_rate // 20
+            case 15000:
+                cutoff_freq = sample_rate // 30
+            case 20000:
+                cutoff_freq = sample_rate // 40
+            case 25000:
+                cutoff_freq = sample_rate // 50
+            case 30000:
+                cutoff_freq = sample_rate // 60
+
+    else:
+        match config["input_size"]:
+            case 2500:
+                cutoff_freq = sample_rate//2
+            case 5000:
+                cutoff_freq = sample_rate // 2
+            case 10000:
+                cutoff_freq = sample_rate // 4
+            case 15000:
+                cutoff_freq = sample_rate // 6
+            case 20000:
+                cutoff_freq = sample_rate // 8
+            case 25000:
+                cutoff_freq = sample_rate // 10
+            case 30000:
+                cutoff_freq = sample_rate // 12
+
     neuro_net.optimizer = optim.AdamW(neuro_net._model.parameters(),
                                       **neuro_net.config["training_params"]["optimizer_params"].get("kwargs", {}))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer,
@@ -95,44 +126,54 @@ def train_network(config, network):
         #                                                T_max=nn_config["training_params"]["epoch_num"])
 
             # cutoff = {2500: sample_rate, 5000: sample_rate, 10000: sample_rate, 15000:sample_rate, 20000: sample_rate, 25000: sample_rate, 30000: sample_rate}
-
-    # step =
-    train_set = SignalDataset(step=10000, window_size=5000, bin_setup=train_config, cutoff=(0,config["cutoff"]), source_dtype="float32")
-    val_set = SignalDataset(step=10000, window_size=5000, bin_setup=val_config, cutoff=(0,config["cutoff"]), source_dtype="float32")
+    print(cutoff_freq)
+    train_set = SignalDataset(step=10000, window_size=config["input_size"], bin_setup=train_config, cutoff=(1000,cutoff_freq), source_dtype="float32")
+    val_set = SignalDataset(step=10000, window_size=config["input_size"], bin_setup=val_config, cutoff=(1000,cutoff_freq), source_dtype="float32")
     train_dl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True, pin_memory=True)
     val_dl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
 
     start_epoch = 0
     running_loss = 0.0
-    early_stopper = EarlyStopper(patience=10)
-
+    best_acc = 0
+    early_stopper = EarlyStopper(patience=12)
     for epoch in range(start_epoch, nn_config["training_params"]["epoch_num"]):
         neuro_net.train_one_epoch(train_dl, running_loss)
         neuro_net.validate(val_dl)
         scheduler.step()
 
-        train.report({"loss": neuro_net.val_loss, "accuracy": neuro_net.val_accuracy[-1],
-                      "lr": scheduler.get_last_lr()[0]})
+        checkpoint_data = {
+            "epoch": epoch,
+            "net_state_dict": neuro_net._model.state_dict(),
+            "optimizer_state_dict": neuro_net.optimizer.state_dict(),
+        }
+        acc = neuro_net.val_accuracy[-1]
+        if acc > best_acc:
+            best_acc = acc
+        train.report({"loss": neuro_net.best_loss,
+                      "accuracy": acc,
+                      "lr": scheduler.get_last_lr()[0],
+                      "epoch_trained": epoch,
+                      "best_acc": best_acc})
 
         if early_stopper.early_stop(neuro_net.val_loss):
             print(f"Training stopped due to early stopping. Last epoch: {epoch}")
             break
 
 
-config_length = {
-    "input_size": tune.grid_search([2000, 5000, 10000, 15000, 20000, 25000, 30000])
 
+config_length = {
+    "input_size": tune.grid_search([2500, 5000, 10000, 15000, 20000, 25000, 30000])
 }
 
 cutoffs = {
      "cutoff": tune.grid_search([50000, 60000, 80000, 100000, 120000, 140000, 200000, 250000, 300000, 781250])
 }
 
-nn_models = ["InceptionTime_old", "CNN_old", "LSTM_old"]
+nn_models = ["InceptionTime", "LSTM", "CNN"]
 
 for network in nn_models:
 
-    hebo = HEBOSearch(metric="accuracy", mode="max")
+    hebo = HEBOSearch(metric="loss", mode="min")
     # hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
     iter = {"InceptionTime": 51, "LSTM": 51, "CNN": 51}
     iter_min = {"InceptionTime": 15,  "LSTM": 15, "CNN": 15}
@@ -150,8 +191,7 @@ for network in nn_models:
         name="STEP_" + network,
         resources_per_trial={"cpu": 10, "gpu": 1},
         num_samples=5,
-        # scheduler=asha_scheduler,
-        config=cutoffs,
+        config=config_length,
         storage_path="/mnt/home2/hparams_checkpoints/",
         verbose=1,
     )
