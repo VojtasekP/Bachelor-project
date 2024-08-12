@@ -10,7 +10,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import tsaug
+from early_stopping import EarlyStopper
 from matplotlib import pyplot as plt
 from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -23,33 +23,16 @@ import networks.networks as networks
 
 DEVICE = "cuda"
 
-class EarlyStopper:
-    def __init__(self, patience=1, min_delta=0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.min_validation_loss = float('inf')
 
-    def early_stop(self, validation_loss):
-        if validation_loss < self.min_validation_loss:
-            self.min_validation_loss = validation_loss
-            self.counter = 0
-        elif validation_loss > (self.min_validation_loss + self.min_delta):
-            self.counter += 1
-            if self.counter >= self.patience:
-                return True
-        return False
 
 class SignalModel:
-    def __init__(self, config: dict, aug_params: dict = None):
+    def __init__(self, config: dict, aug_params: dict = None, normalize=False, fft=False):
         self.config = config
         self.model_config = self.config["model"]
         self.classes = self.config["classes"]
         self.aug_params = aug_params
         self._model = self.init_model()
-        self._train_transform = self.init_transform(train=True)
-        self._val_transform = self.init_transform(train=False)
-
+        self._transform = self.init_transform(normalize, fft=fft)
     @abc.abstractmethod
     def init_model(self):
         pass
@@ -69,25 +52,32 @@ class SignalModel:
     def save(self, path: Path):
         pass
 
-    def init_transform(self, train:bool) -> Callable:
-
+    def init_transform(self, normalize, fft) -> Callable:
         def transform(x):
-            return x
+            if normalize:
+                min_val = np.min(x, axis=(1, 2), keepdims=True)
+                max_val = np.max(x, axis=(1, 2), keepdims=True)
+                x = (x - min_val) / (max_val - min_val)
+            if fft:
+                x = np.fft.rfft(x, axis=-1)
+                x = np.abs(x).astype(np.float32)
+            return x.astype(np.float32)
         return transform
 
     # def _evaluate(self, x: np.ndarray) -> np.ndarray:
     #     x = self._transform(x)
     #     return self.inference(x)
 
-    def plot_confusion_matrix(self, y_pred: np.ndarray, y_true: np.ndarray):
-        class_num = 6  # in future will not be hard coded
-        cm = confusion_matrix(y_true, y_pred, labels=np.arange(class_num))
-        plt.figure(figsize=(10, 10))
-        plt.imshow(cm, cmap='Greens')
-        for i in range(class_num):
-            for j in range(class_num):
-                plt.text(j, i, cm[i, j], ha="center", va="bottom", color='gray')
-                plt.text(j, i, str(j), ha="center", va="top", color='gray')
+    def plot_confusion_matrix(self, y_pred: np.ndarray, y_true: np.ndarray, save_path: Path = None):
+        cm = confusion_matrix(y_true, y_pred, labels=np.arange(len(self.classes)))
+        df_cm = pd.DataFrame(cm, index=[i for i in range(len(self.classes))],
+                             columns=[i for i in range(len(self.classes))])
+        df_cm_norm = pd.DataFrame(cm / np.sum(cm, axis=1)[:, None], index=[i for i in range(len(self.classes))],
+                             columns=[i for i in range(len(self.classes))])
+        plt.figure(figsize=(3.3, 3))
+        sns.heatmap(df_cm_norm, annot=df_cm, cbar=False, xticklabels=self.classes, yticklabels=self.classes, fmt=".0f")
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
         plt.show()
 
     def accuracy(self, y_pred: np.ndarray, y_true: np.ndarray) -> float:
@@ -125,19 +115,19 @@ class SklearnModel(SignalModel, ABC):
 
 class NeuroNet(SignalModel, ABC):
 
-    def __init__(self, config: dict, aug_params: dict=None, state_dict: dict = None, metrics: bool = False):
-        super().__init__(config, aug_params)
+    def __init__(self, config: dict,  normalize=False, fft=False, aug_params: dict=None, state_dict: dict = None, metrics: bool = False):
+        super().__init__(config, aug_params, normalize, fft)
 
 
         self.metrics = metrics
         self.writer = SummaryWriter(
-            comment=f"_{self.model_config['class']}_{self.config['training_params']['dataloader_params']['batch_size']}")
+            comment=f"_{self.model_config['class']}")
 
         self._model.to(DEVICE)
         if state_dict is not None:
             self._model.load_state_dict(state_dict)
 
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.criterion = nn.CrossEntropyLoss()
         self.best_model_dict = {}
 
         self.train_loss_list = []
@@ -191,33 +181,40 @@ class NeuroNet(SignalModel, ABC):
         optimizer = optimizer.lower()
         match optimizer:
             case "sgd":
-                return optim.SGD(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+                return optim.SGD(
+                    self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
             case "adam":
-                return optim.Adam(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+                return optim.Adam(
+                    self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
             case "adamw":
-                return optim.AdamW(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+                return optim.AdamW(
+                    self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
             case "rmsprop":
-                return optim.RMSprop(self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
+                return optim.RMSprop(
+                    self._model.parameters(), **self.config["training_params"]["optimizer_params"].get("kwargs", {}))
 
     def _init_scheduler(self, scheduler: str):
         scheduler = scheduler.lower()
         match scheduler:
             case "cosineAnnealing"| "cosine" | "cosine_annealing":
-                return optim.lr_scheduler.CosineAnnealingLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                return optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
                 # T_max
             case "exponential":
-                return optim.lr_scheduler.ExponentialLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                return optim.lr_scheduler.ExponentialLR(
+                    self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
                 # gamma
             case "cosineAnnealingWithRestarts" | "warmups" | "cosine_warmup" | "cosine_annealing_warmup":
-                return optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                return optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                    self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
                 # T_0
             case "polynomial":
-                return optim.lr_scheduler.PolynomialLR(self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
+                return optim.lr_scheduler.PolynomialLR(
+                    self.optimizer, **self.config["training_params"]["scheduler_params"].get("kwargs", {}))
                 # power and total_iter
 
-
-
-    def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader, config: dict = None, patience:int = 5) -> None:
+    def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader,
+              config: dict = None, patience:int = 5) -> None:
         if config is not None:
             self.config = config
         self.optimizer = self._init_optimizer(optimizer=self.config["training_params"]["optimizer_params"]["class"])
@@ -244,12 +241,13 @@ class NeuroNet(SignalModel, ABC):
         self.writer.close()
         print(f"Best loss achieved at epoch {self.best_epoch}")
 
+
     def train_one_epoch(self, train_dataloader, running_loss):
         outputs = torch.empty(size=(0, 6), dtype=torch.float32, device=DEVICE).flatten()
         targets = torch.empty(size=(0, 1), dtype=torch.long, device=DEVICE).flatten()
         for i, (input, target) in enumerate(train_dataloader):
             self._model.train()
-            input = torch.from_numpy(self._train_transform(input.numpy()))
+            input = torch.from_numpy(self._transform(input.numpy()))
             input, target = input.to(DEVICE), target.to(DEVICE)
             self.optimizer.zero_grad()
 
@@ -274,6 +272,7 @@ class NeuroNet(SignalModel, ABC):
             with torch.no_grad():
                 self.calculate_metrics(outputs, targets, tag="train")
     # VALIDATION
+
     def validate(self, val_dataloader: DataLoader):
         self._model.eval()
         num_batches = len(val_dataloader)
@@ -283,6 +282,7 @@ class NeuroNet(SignalModel, ABC):
             targets = torch.empty(size=(0, 1), dtype=torch.long, device=DEVICE).flatten()
             running_loss = 0.0
             for i, (input, target) in enumerate(val_dataloader):
+                input = torch.from_numpy(self._transform(input.numpy()))
                 input, target = input.to(DEVICE), target.to(DEVICE)
                 output = self._model(input)
                 running_loss += self.criterion(output, target).item()
@@ -298,13 +298,15 @@ class NeuroNet(SignalModel, ABC):
                 self.best_loss = new_val_loss
 
             self.val_loss_list.append(new_val_loss)
-            self.writer.add_scalars(main_tag=f'Loss', tag_scalar_dict={"val": new_val_loss, "train": self.train_loss_list[-1]}, global_step=self.total_batch_id)
+            self.writer.add_scalars(main_tag=f'Loss',
+                                    tag_scalar_dict={"val": new_val_loss, "train": self.train_loss_list[-1]},
+                                    global_step=self.total_batch_id)
             self.val_loss = new_val_loss
 
     def predict(self, x: np.ndarray, argmax=True) -> np.ndarray:
         self._model.eval()
         with torch.no_grad():
-            x = self._val_transform(x)
+            x = self._transform(x)
             x = torch.from_numpy(x).to(DEVICE)
 
             if x.ndim == 2:
@@ -332,24 +334,6 @@ class NeuroNet(SignalModel, ABC):
 
         self.writer.add_figure(tag=f"Confusion matrix/{tag}",
                                figure=sns_cm.get_figure(),
-                               global_step=self.total_batch_id)
-
-        # F1-SCORE
-        cr = classification_report(targets, predictions,
-                                   labels=np.arange(len(self.classes)),
-                                   output_dict=True,
-                                   zero_division=0)
-
-        self.writer.add_scalar(tag=f'F1-score/{tag}',
-                               scalar_value=cr["weighted avg"]["f1-score"],
-                               global_step=self.total_batch_id)
-
-        self.writer.add_scalar(tag=f'Precision/{tag}',
-                               scalar_value=cr["weighted avg"]["precision"],
-                               global_step=self.total_batch_id)
-
-        self.writer.add_scalar(tag=f'Recall/{tag}',
-                               scalar_value=cr["weighted avg"]["recall"],
                                global_step=self.total_batch_id)
 
 

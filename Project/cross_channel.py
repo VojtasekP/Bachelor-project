@@ -5,13 +5,14 @@ import yaml
 from torch.utils.data import DataLoader
 
 from dataset.signal_dataset import SignalDataset
-from dataset.load_yaml import load_yaml
 from signal_model import NeuroNet
 import re
 import torch
+def load_yaml(config_path: Path):
+    with config_path.open(mode="r") as yaml_file:
+        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 
-
-def main(model, channel_train, channel_test):
+def main(model, channel_train, channel_test, noise):
 
     window_size = 30000
 
@@ -42,28 +43,32 @@ def main(model, channel_train, channel_test):
                    for i in Path(signal_data_dir).glob('*') if re.search(r'\d$', i.stem)]
 
 
-
     model_path = Path("configs/nn_configs/" + model + ".yaml")
     nn_config = load_yaml(model_path)
-    neuro_net = NeuroNet(config=nn_config, metrics=True)
+    neuro_net = NeuroNet(config=nn_config, metrics=True, normalize=True)
     if model == "InceptionTime":
         cutoff = (1000, sample_rate // 60)
     else:
         cutoff = (1000, sample_rate // 24)
-
-    train_set = SignalDataset(step=5000, window_size=window_size, bin_setup=train_config,  cutoff=cutoff,source_dtype="float32")
+    augmentation_params = {
+        'add_noise': noise,  # Add Gaussian noise with 0.0001 standard deviation
+        # 'frequency_shift': 15625,
+        # 'scale': 0.1,  # Scale by up to 10%
+        # 'time_stretch': 0.4  # Stretch/compress by up to 40%
+        # "magnitude_shift": 0.99
+    }
+    train_set = SignalDataset(step=5000, window_size=window_size, aug_params= augmentation_params, bin_setup=train_config,  cutoff=cutoff,source_dtype="float32")
     val_set = SignalDataset(step=5000, window_size=window_size, bin_setup=validation_config, cutoff=cutoff, source_dtype="float32")
     test_set = SignalDataset(step=5000, window_size=window_size, bin_setup=test_config, cutoff=cutoff, source_dtype="float32")
 
-    traindl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True)
+    traindl = DataLoader(train_set, **nn_config["training_params"].get("dataloader_params", {}), shuffle=True,
+                         pin_memory=True)
 
-    valdl = DataLoader(val_set, **nn_config["eval_params"])
+    valdl = DataLoader(val_set, **nn_config["eval_params"], pin_memory=True)
 
     # neuro_net._model.load_state_dict(torch.load("trained_models/" + channel_train + "/InceptionTime.pt"))
     # TRAIN
     neuro_net.train(traindl, valdl, patience=12)
-
-
     save_path = "trained_models/" + channel_train + "/" + model +" +_cross_channnel.pt"
     neuro_net.save(save_path)
     neuro_net._model.load_state_dict(torch.load((save_path)))
@@ -71,7 +76,7 @@ def main(model, channel_train, channel_test):
 
 
     # EVALUATE ON TEST SET
-    test_dataloader = DataLoader(test_set, **nn_config["eval_params"])
+    test_dataloader = DataLoader(test_set, batch_size=256, shuffle=False)
     outputs = np.empty((0,), dtype=np.float32)
     targets = np.empty((0,), dtype=np.longdouble).flatten()
     for i, (input, target) in enumerate(test_dataloader):
@@ -79,15 +84,20 @@ def main(model, channel_train, channel_test):
         output = neuro_net.predict(input, argmax=True)
         outputs = np.concatenate((outputs, output), axis=0)
         targets = np.concatenate((targets, target), axis=0)
-
+    # save_path = "/home/petr/Documents/graphs_for_BC/CM/cm_" + model + "_" + channel_train + "_crch.pdf"
     neuro_net.plot_confusion_matrix(outputs, targets)
 
 if __name__ == '__main__':
-
+    channel_1 = 'ch1'
+    channel_2 = 'ch2'
+    channel_3 = 'ch3'
     models = ["InceptionTime", "CNN", "LSTM"]
-    channels = ['ch1', 'ch2', 'ch3']
+    channels = [channel_1, channel_2, channel_3]
+    for noise in [0.005]:
+        for model in models:
+            for channel in channels:
+                    main(model, channel, channel, noise)
 
-    for model in models:
-        for channel in channels:
-            main(model, channel, channel)
-
+    # for model in models:
+    #     main(model, channel_3, channel_2)
+# TODO: learn pycharm keybindings, etc.  ctrl, shift, alt, arrows; ctrl+alt+m/v
