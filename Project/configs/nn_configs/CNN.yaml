@@ -83,7 +83,7 @@ model:
       - name: avgpool1d
         kwargs:
           kernel_size: 3
-        id: avgpool
+        id: avgpool4
       - name: Flatten
         kwargs:
           start_dim: 1

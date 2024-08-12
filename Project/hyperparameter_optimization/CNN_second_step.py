@@ -1,3 +1,4 @@
+import math
 import re
 
 import torch
@@ -32,7 +33,11 @@ def update_layer_argument(nn_config: dict, layer_id: str, arg: str, value):
             for layer in layer_config:
                 if layer.get("id") == layer_id:
                     layer["kwargs"][arg] = value
-
+def calculate_conv_output_size(input_size, kernel_size, padding, dilation, stride = 1):
+    output_size = math.floor(
+        (input_size - dilation * (kernel_size - 1) - 1 + 2 * padding) / stride
+    ) + 1
+    return output_size
 # test_set = SignalDataset(step=10000, window_size=1000, bin_setup=test_config, source_dtype="float32")
 def train_cnn(config):
     sample_rate = 1562500
@@ -55,8 +60,8 @@ def train_cnn(config):
     update_layer_argument(nn_config, 'conv1', 'padding', config['first_conv']['kernel_size'] // 2)
     update_layer_argument(nn_config, 'conv1', 'dilation', config['dilation'])
     update_layer_argument(nn_config, 'avgpool1', 'kernel_size', config['pool'])
-
-
+    output_size = calculate_conv_output_size(input_size=5000, kernel_size=config['first_conv']['kernel_size'], dilation=config['dilation'], padding=config['first_conv']['kernel_size']//2)
+    print(output_size)
     update_layer_argument(nn_config, 'bn1', 'num_features', config['first_conv']["out_channels"])
     #
     update_layer_argument(nn_config, 'conv2', 'in_channels', config['first_conv']["out_channels"])
@@ -65,6 +70,8 @@ def train_cnn(config):
     update_layer_argument(nn_config, 'conv2', 'padding', config['second_conv']['kernel_size'] // 2)
     update_layer_argument(nn_config, 'conv2', 'dilation', config['dilation'])
     update_layer_argument(nn_config, 'avgpool2', 'kernel_size', config['pool'])
+    output_size = calculate_conv_output_size(input_size=output_size, kernel_size=config['second_conv']['kernel_size'], dilation=config['dilation'], padding=config['second_conv']['kernel_size']//2)
+    print(output_size)
     #
     update_layer_argument(nn_config, 'bn2', 'num_features', config['second_conv']["out_channels"])
     #
@@ -75,22 +82,26 @@ def train_cnn(config):
     update_layer_argument(nn_config, 'conv3', 'dilation', config['dilation'])
     update_layer_argument(nn_config, 'avgpool3', 'kernel_size', config['pool'])
     #
+    output_size = calculate_conv_output_size(input_size=output_size, kernel_size=config['third_conv']['kernel_size'], dilation=config['dilation'], padding=config['third_conv']['kernel_size']//2)
+    print(output_size)
     update_layer_argument(nn_config, 'bn3', 'num_features', config['third_conv']["out_channels"])
     #
     update_layer_argument(nn_config, 'conv4', 'in_channels', config['third_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv4', 'out_channels', config['fourth_conv']["out_channels"])
     update_layer_argument(nn_config, 'conv4', 'kernel_size', config['fourth_conv']['kernel_size'])
     update_layer_argument(nn_config, 'conv4', 'padding', config['fourth_conv']['kernel_size'] // 2)
+    update_layer_argument(nn_config, 'avgpool4', 'kernel_size', config['pool'])
     #
     update_layer_argument(nn_config, 'bn4', 'num_features', config['fourth_conv']["out_channels"])
     #
-    update_layer_argument(nn_config, 'adaptivepool', 'output_size', config['adaptivepool'])
-    update_layer_argument(nn_config, 'linear1', 'in_features', int(config['fourth_conv']["out_channels"]*config['adaptivepool']))
+    output_size = calculate_conv_output_size(input_size=output_size, kernel_size=config['fourth_conv']['kernel_size'], dilation=config['dilation'], padding=config['fourth_conv']['kernel_size']//2)
+    print(output_size)
+    update_layer_argument(nn_config, 'linear1', 'in_features', output_size*int(config['fourth_conv']["out_channels"]*config['pool']))
     update_layer_argument(nn_config, 'linear1', 'out_features', config['linear'])
     update_layer_argument(nn_config, 'dropout', 'p', config['dropout'])
     update_layer_argument(nn_config, 'linear2', 'in_features', config['linear'])
     neuro_net = NeuroNet(config=nn_config, metrics=True)
-
+    print(nn_config)
     neuro_net.optimizer = optim.Adam(neuro_net._model.parameters(),
                                      **neuro_net.config["training_params"]["optimizer_params"].get("kwargs", {}))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(neuro_net.optimizer,
@@ -131,7 +142,7 @@ def train_cnn(config):
 
 
 config = {
-    "dilation": tune.randint(1, 20),
+    "dilation": tune.randint(1, 5),
     "first_conv" :{
         "out_channels": tune.qrandint(2,32, 2),
         "kernel_size": tune.randint(2,80),
@@ -149,17 +160,15 @@ config = {
         "kernel_size": tune.randint(2, 80),
     },
     "pool": tune.randint(1, 5),
-    "adaptivepool": tune.qrandint(10, 200),
     "dropout": tune.uniform(0, 0.5),
     "linear": tune.randint(5, 1000),
 }
 
 
 
-network = "CNN_old"
+network = "CNN"
 nn_config = load_yaml(Path("/home/petr/Documents/bachelor_project/Project/configs/nn_configs/" + network + ".yaml"))
 hebo = HEBOSearch(metric="loss", mode="min")
-# hebo.restore("/home/petr/ray_results/train_network_2024-06-13_22-10-15/searcher-state-2024-06-13_22-10-15.pkl")
 
 optuna_search = OptunaSearch(
     metric="accuracy",
