@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 from scipy.signal import resample
 
 
@@ -22,24 +23,37 @@ def time_stretch(signal, stretch_factor):
     else:
         return np.pad(stretched, (0, length - len(stretched)), 'constant')
 # Function to get key and value by index
-def lowpass_filter(signal, cutoff_freq, sample_rate):
-    if cutoff_freq is None:
+def bandpass_filter(signal, cutoff: tuple, sample_rate):
+
+    if cutoff is None:
         return signal
+    low, high = cutoff
     fft_signal = np.fft.fft(signal)
     freqs = np.fft.fftfreq(len(signal), 1/sample_rate)
-    lowpass_filter = np.abs(freqs) <= cutoff_freq
-    filtered_fft_signal = fft_signal * lowpass_filter
+    # Create the bandpass filter
+    bandpass_filter = (np.abs(freqs) >= low) & (np.abs(freqs) <= high)
+    # Apply the bandpass filter to the FFT of the signal
+    filtered_fft_signal = fft_signal * bandpass_filter
     filtered_signal = np.fft.ifft(filtered_fft_signal)
 
     return filtered_signal.real.astype(np.float32)
 
+
+def detrend_signal(signal):
+    n = len(signal)
+    t = np.arange(n)
+    p = np.polyfit(t, signal, 1)  # Fit a first degree polynomial (a straight line) to the data
+    trend = np.polyval(p, t)  # Evaluate the polynomial (trend line)
+    detrended_signal = signal - trend  # Subtract the trend from the original signal
+
+    return detrended_signal.astype(np.float32)
 def frequency_shift(signal, frequency_shift_hz):
 
     fs = 1562500
     n = len(signal)
     fft_signal = np.fft.fft(signal)
     freqs = np.fft.fftfreq(n, 1/fs)
-    shift_phase = np.exp(1j * 2 * np.pi * frequency_shift_hz * freqs)
+    shift_phase = np.exp(2 * np.pi * frequency_shift_hz * freqs)
     shifted_fft_signal = fft_signal * shift_phase
     shifted_signal = np.fft.ifft(shifted_fft_signal)
     shifted_signal = np.real(shifted_signal)
@@ -58,7 +72,7 @@ def magnitude_warping(signal, warp_factor):
     return warped_signal.astype(np.float32)
 
 def augment_data(data, augmentation_params = None):
-    if augmentation_params is None:
+    if not augmentation_params:
         return data
     if 'time_shift' in augmentation_params:
         shift = np.random.randint(-augmentation_params['time_shift'], augmentation_params['time_shift'])
