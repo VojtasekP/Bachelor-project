@@ -1,6 +1,6 @@
 # Bearing Damage Classification using Neural Networks
 
-This project is part of my bachelor's thesis. The main focus of this thesis is the classification of acoustic emission (AE) signals of damaged bearings. Six selected damage classes were considered, and the signals were recorded using three different sensors, resulting in three distinct datasets, **D₁**, **D₂**, and **D₃**. The study aimed to answer several key questions regarding sensor suitability, the impact of surrounding noise, and the generalization capability of the model across different sensors. This was the first major project I've ever worked on, and any corrections to my code are more than welcome.
+This project is part of my bachelor's thesis. The main focus of this thesis is the classification of acoustic emission (AE) signals of damaged bearings. Six selected damage classes were considered, and the signals were recorded using three different sensors, resulting in three distinct datasets, **D₁**, **D₂**, and **D₃**. The study aimed to answer several key questions regarding sensor suitability, the impact of surrounding noise, and the generalization capability of the model across different sensors. This was the first major project I've ever worked on, and any corrections to my code are more than welcome. The link to the thesis will be provided once it is published. 
 ## Project Structure
 
 - **configs/**: Configuration files for neural networks and other models.
