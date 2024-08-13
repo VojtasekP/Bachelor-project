@@ -7,7 +7,7 @@ This project is part of my bachelor's thesis. The main focus of this thesis is t
 - **CNN**: Convolutional Neural Network classifier.
 - **InceptionTime**: SOTA neural network time series classifier.
 - **LSTM**: Long Short-Term Memory network classifier.
-- **HIVE-COTE v2 (HC2)**: A comprehensive SOTA time-series classifier used as a benchmark.
+- **HIVE-COTE v2 (HC2)**: SOTA time-series classifier used as a benchmark.
 
 
 ## Project Structure
