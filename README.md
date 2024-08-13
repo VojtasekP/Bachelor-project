@@ -20,8 +20,17 @@ This project is part of my bachelor's thesis. The main focus of this thesis is t
 - **LSTM**: Long Short-Term Memory network classifier.
 - **HIVE-COTE v2 (HC2)**: A comprehensive time-series classifier used as a benchmark.
 
-## Installation guide
-  
+### Conda env
+
+Once you have Conda installed and have navigated to the project directory, create a new environment using the `environment.yaml` file:
+
+```bash
+conda env create -f environment.yaml
+```
+
+This command will create a new Conda environment with all the dependencies specified in the `environment.yaml` file.
+
+
 ## Results Summary
 
 We recommend you skim through the paper to understand the presented results better. In paper are also provided the training and validation accuracy curves and confusion matrices. 
