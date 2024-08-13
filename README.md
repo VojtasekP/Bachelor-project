@@ -1,6 +1,6 @@
 # Bearing Damage Classification using Neural Networks
 
-This project is part of my bachelor's thesis. The main focus of this thesis is the classification of acoustic emission (AE) signals of damaged bearings. Six selected damage classes were considered, and the signals were recorded using three different sensors, resulting in three distinct datasets, **D₁**, **D₂**, and **D₃**. The study aimed to answer several key questions regarding sensor suitability, the impact of surrounding noise, and the generalization capability of the model across different sensors. This was the first major project I've ever worked on, and any corrections to my code are more than welcome.
+This project is part of my bachelor's thesis. The main focus of this thesis is the classification of acoustic emission (AE) signals of damaged bearings. Six selected damage classes were considered, and the signals were recorded using three different sensors, resulting in three distinct datasets, **D₁**, **D₂**, and **D₃**. The study aimed to answer several key questions regarding sensor suitability, the impact of surrounding noise, and the generalization capability of the model across different sensors. This was the first major project I've ever worked on, and any corrections to my code are more than welcome. The link to the thesis will be provided once it is published. 
 ## Project Structure
 
 - **configs/**: Configuration files for neural networks and other models.
@@ -18,10 +18,19 @@ This project is part of my bachelor's thesis. The main focus of this thesis is t
 - **CNN**: Convolutional Neural Network classifier.
 - **InceptionTime**: SOTA neural network time series classifier.
 - **LSTM**: Long Short-Term Memory network classifier.
-- **HIVE-COTE v2 (HC2)**: A comprehensive time-series classifier used as a benchmark.
+- **HIVE-COTE v2 (HC2)**: A comprehensive SOTA time-series classifier used as a benchmark.
 
-## Installation guide
-  
+### Conda env
+
+Once you have Conda installed and have navigated to the project directory, create a new environment using the `environment.yaml` file:
+
+```bash
+conda env create -f environment.yaml
+```
+
+This command will create a new Conda environment with all the dependencies specified in the `environment.yaml` file.
+
+
 ## Results Summary
 
 We recommend you skim through the paper to understand the presented results better. In paper are also provided the training and validation accuracy curves and confusion matrices. 
@@ -81,7 +90,7 @@ The final experiment tested the models' ability to generalize across different s
 | **Trained on** | **D₁** | **D₁** | **D₁** | **D₂** | **D₂** | **D₂** | **D₃** | **D₃** | **D₃** |
 | CNN           | 94.62     | 50.30     | 22.72     | 35.73     | 93.29     | 37.52     | 45.21     | 38.93     | 88.05     |
 | LSTM          | 90.01     | 46.42     | 31.73     | 32.31     | 86.61     | 34.09     | 35.13     | 41.03     | 82.32     |
-| IT            | 95.36 | 41.17     | 56.12 | 42.15     | 93.06| 30.00     | **50.76** | **57.44** | **83.59 |
+| IT            | 95.36 | 41.17     | 56.12 | 42.15     | 93.06| 30.00     | **50.76** | **57.44** | 83.59 |
 
 **Table 4**: Cross-channel generalization accuracies across different datasets.
 
