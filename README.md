@@ -8,7 +8,7 @@ This project is part of my bachelor's thesis. The main focus of this thesis is t
 - **hyperparameter_optimization/**: Scripts for optimizing model hyperparameters.
 - **networks/**: Implementations of different neural network architectures.
 - **signal_model.py**: Class handling all network loading, training, evaluation, visualization, etc.
-- **main.py**: Script to run the first experiment, that is, the classification of recorded acoustic emission of bearings.
+- **raw_ae.py**: Script to run the first experiment - the classification of recorded acoustic emission of bearings.
 - **gearbox_emmision.py**: Script to run for the second experiment involving the addition of acoustic emission of the gearbox.
 - **cross_channel.py**: Script to run the third experiment that addresses a possible simple approach to cross-channel generalization.
 - **hive_cote_v2.py**: Script to run the HC2 classifier.
